@@ -12,6 +12,8 @@ use FluentCart\App\Modules\PaymentMethods\Core\AbstractPaymentGateway;
 class RazorpayGateway extends AbstractPaymentGateway
 {
     private $methodSlug = 'razorpay';
+    private $addonSlug = 'razorpay-for-fluent-cart';
+    private $addonFile = 'razorpay-for-fluent-cart/razorpay-for-fluent-cart.php';
 
     public array $supportedFeatures = [
         'payment',
@@ -25,6 +27,11 @@ class RazorpayGateway extends AbstractPaymentGateway
             new Settings\RazorpaySettingsBase(), 
             null // No subscription support
         );
+
+        add_filter('fluent_cart/payment_methods_with_custom_checkout_buttons', function ($methods) {
+            $methods[] = 'razorpay';
+            return $methods;
+        });
     }
 
     public function meta(): array
@@ -43,7 +50,15 @@ class RazorpayGateway extends AbstractPaymentGateway
             'brand_color'        => '#3399cc',
             'status'             => $this->settings->get('is_active') === 'yes',
             'upcoming'           => false,
-            'supported_features' => $this->supportedFeatures,
+            'is_addon'           => true,
+            'addon_source'       => [
+                'type' => 'github',
+                'link' => 'https://github.com/WPManageNinja/razorpay-for-fluent-cart/releases/latest',
+                'slug' => $this->addonSlug,
+                'file' => $this->addonFile,
+                'is_installed' => true
+            ],
+            'supported_features' => $this->supportedFeatures
         ];
     }
 
@@ -80,7 +95,7 @@ class RazorpayGateway extends AbstractPaymentGateway
             'message'      => __('Order info retrieved!', 'razorpay-for-fluent-cart'),
             'data'         => [],
             'payment_args' => [
-                'public_key' => $this->settings->getPublicKey(),
+                'key' => $this->settings->getPublicKey(),
                 'checkout_type' => $this->settings->get('checkout_type')
             ],
         ], 200);
@@ -100,7 +115,76 @@ class RazorpayGateway extends AbstractPaymentGateway
 
     public static function getRazorpaySupportedCurrency(): array
     {
-        return ['INR'];
+        return $razorpay_supported_currencies = [
+            'AED', // United Arab Emirates Dirham
+            'ALL', // Albanian Lek
+            'AMD', // Armenian Dram
+            'ARS', // Argentine Peso
+            'AUD', // Australian Dollar
+            'AWG', // Aruban Florin
+            'BBD', // Barbadian Dollar
+            'BDT', // Bangladeshi Taka
+            'BMD', // Bermudian Dollar
+            'BND', // Brunei Dollar
+            'BOB', // Bolivian Boliviano
+            'BSD', // Bahamian Dollar
+            'BWP', // Botswana Pula
+            'BZD', // Belize Dollar
+            'CAD', // Canadian Dollar
+            'CHF', // Swiss Franc
+            'CNY', // Chinese Yuan
+            'COP', // Colombian Peso
+            'CRC', // Costa Rican Colon
+            'CZK', // Czech Koruna
+            'DKK', // Danish Krone
+            'DOP', // Dominican Peso
+            'EUR', // Euro
+            'FJD', // Fijian Dollar
+            'GBP', // British Pound Sterling
+            'GHS', // Ghanaian Cedi
+            'GIP', // Gibraltar Pound
+            'GMD', // Gambian Dalasi
+            'GTQ', // Guatemalan Quetzal
+            'GYD', // Guyanese Dollar
+            'HKD', // Hong Kong Dollar
+            'HNL', // Honduran Lempira
+            'HRK', // Croatian Kuna
+            'HTG', // Haitian Gourde
+            'HUF', // Hungarian Forint
+            'IDR', // Indonesian Rupiah
+            'ILS', // Israeli New Shekel
+            'INR', // Indian Rupee
+            'JPY', // Japanese Yen
+            'KRW', // South Korean Won
+            'KWD', // Kuwaiti Dinar
+            'LKR', // Sri Lankan Rupee
+            'MAD', // Moroccan Dirham
+            'MXN', // Mexican Peso
+            'MYR', // Malaysian Ringgit
+            'NGN', // Nigerian Naira
+            'NOK', // Norwegian Krone
+            'NZD', // New Zealand Dollar
+            'PEN', // Peruvian Sol
+            'PHP', // Philippine Peso
+            'PKR', // Pakistani Rupee
+            'PLN', // Polish Zloty
+            'QAR', // Qatari Riyal
+            'RON', // Romanian Leu
+            'RUB', // Russian Ruble
+            'SAR', // Saudi Riyal
+            'SEK', // Swedish Krona
+            'SGD', // Singapore Dollar
+            'THB', // Thai Baht
+            'TRY', // Turkish Lira
+            'TWD', // Taiwan Dollar
+            'UAH', // Ukrainian Hryvnia
+            'USD', // United States Dollar
+            'UYU', // Uruguayan Peso
+            'UZS', // Uzbekistani Soʻm
+            'YER', // Yemeni Rial
+        ];
+        
+        
     }
 
     public function handleIPN(): void
@@ -110,21 +194,18 @@ class RazorpayGateway extends AbstractPaymentGateway
 
     public function getEnqueueScriptSrc($hasSubscription = 'no'): array
     {
-        $scripts = [
+        return [
             [
-                'handle' => 'razorpay-checkout-sdk',
-                'src'    => 'https://checkout.razorpay.com/v1/checkout.js',
-                'version' => '1.0'
+                'handle' => 'fluent-cart-razorpay-checkout',
+                'src' => 'https://checkout.razorpay.com/v1/checkout.js',
             ],
             [
-                'handle' => 'razorpay-fluent-cart-checkout-handler',
-                'src'    => RAZORPAY_FC_PLUGIN_URL . 'assets/razorpay-checkout.js',
+                'handle' => 'fluent-cart-razorpay-custom',
+                'src' => RAZORPAY_FC_PLUGIN_URL . 'assets/razorpay-checkout.js',
                 'version' => RAZORPAY_FC_VERSION,
-                'deps'    => ['razorpay-checkout-sdk']
+                'deps' => ['fluent-cart-razorpay-checkout']
             ]
         ];
-
-        return $scripts;
     }
 
     public function getEnqueueStyleSrc(): array

@@ -107,11 +107,6 @@ class RazorpayAPI
             ]);
         }
 
-        dd($response, [
-            'headers' => $headers,
-            'body' => !empty($args) ? json_encode($args) : ''
-        ]);
-
         if (is_wp_error($response)) {
             return $response;
         }

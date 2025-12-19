@@ -38,14 +38,29 @@ function razorpay_fc_check_dependencies() {
             ?>
             <div class="notice notice-error">
                 <p>
-                    <strong><?php _e('Razorpay for FluentCart', 'razorpay-for-fluent-cart'); ?></strong> 
-                    <?php _e('requires FluentCart to be installed and activated.', 'razorpay-for-fluent-cart'); ?>
+                    <strong><?php esc_html_e('Razorpay for FluentCart', 'razorpay-for-fluent-cart'); ?></strong> 
+                    <?php esc_html_e('requires FluentCart to be installed and activated.', 'razorpay-for-fluent-cart'); ?>
                 </p>
             </div>
             <?php
         });
         return false;
     }
+    
+    if (version_compare(FLUENTCART_VERSION, '1.2.5', '<')) {
+        add_action('admin_notices', function() {
+            ?>
+            <div class="notice notice-error">
+                <p>
+                    <strong><?php esc_html_e('Razorpay for FluentCart', 'razorpay-for-fluent-cart'); ?></strong> 
+                    <?php esc_html_e('requires FluentCart version 1.2.5 or higher', 'razorpay-for-fluent-cart'); ?>
+                </p>
+            </div>
+            <?php
+        });
+        return false;
+    }
+    
     return true;
 }
 
