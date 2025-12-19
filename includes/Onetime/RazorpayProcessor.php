@@ -44,13 +44,13 @@ class RazorpayProcessor
             'receipt'  => $transaction->uuid,
             'notes'    => [
                 'order_id'       => $order->id,
-                'transaction_id' => $transaction->id,
-                'order_hash'     => $order->uuid
+                'transaction_id' => $transaction->uuid,
+                'order_hash'     => $order->uuid,
+                'customer_name'  => $fcCustomer->first_name . ' ' . $fcCustomer->last_name,
             ]
         ];
 
-        $api = new RazorpayAPI();
-        $razorpayOrder = $api->createOrder($orderData);
+        $razorpayOrder = RazorpayAPI::createRazorpayObject('orders', $orderData);
 
         if (is_wp_error($razorpayOrder)) {
             return $razorpayOrder;
@@ -91,7 +91,7 @@ class RazorpayProcessor
         return [
             'status'       => 'success',
             'nextAction'   => 'razorpay',
-            'actionName'   => 'modal',
+            'actionName'   => 'custom',
             'message'      => __('Payment Modal is opening, Please complete the payment', 'razorpay-for-fluent-cart'),
             'payment_args' => array_merge($paymentArgs, [
                 'modal_data'       => $modalData,
@@ -131,12 +131,13 @@ class RazorpayProcessor
             'callback_method' => 'get',
             'notes'          => [
                 'order_id'       => $order->id,
-                'transaction_id' => $transaction->id,
-                'order_hash'     => $order->uuid
+                'transaction_id' => $transaction->uuid,
+                'order_hash'     => $order->uuid,
+                'customer_name'  => $fcCustomer->first_name . ' ' . $fcCustomer->last_name,
             ],
             'notify'         => [
-                'email' => in_array('email', $settings->get('notification')),
-                'sms'   => in_array('sms', $settings->get('notification'))
+                'email' => in_array('email', $settings->get('notification') ?: []),
+                'sms'   => in_array('sms', $settings->get('notification') ?: [])
             ]
         ];
 
@@ -146,8 +147,7 @@ class RazorpayProcessor
             'transaction' => $transaction
         ]);
 
-        $api = new RazorpayAPI();
-        $paymentLink = $api->createPaymentLink($paymentLinkData);
+        $paymentLink = RazorpayAPI::createRazorpayObject('payment_links', $paymentLinkData);
 
         if (is_wp_error($paymentLink)) {
             return $paymentLink;

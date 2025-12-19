@@ -1,27 +1,54 @@
 <?php
+/**
+ * Razorpay API Handler
+ *
+ * @package RazorpayFluentCart
+ * @since 1.0.0
+ */
 
 namespace RazorpayFluentCart\API;
 
 use FluentCart\Framework\Support\Arr;
 use RazorpayFluentCart\Settings\RazorpaySettingsBase;
 
+if (!defined('ABSPATH')) {
+    exit; // Direct access not allowed.
+}
+
 class RazorpayAPI
 {
-    private $baseUrl = 'https://api.razorpay.com/v1';
-    private $settings;
+    private static $baseUrl = 'https://api.razorpay.com/v1/';
+    private static $settings = null;
 
-    public function __construct()
+    /**
+     * Get settings instance
+     */
+    public static function getSettings()
     {
-        $this->settings = new RazorpaySettingsBase();
+        if (!self::$settings) {
+            self::$settings = new RazorpaySettingsBase();
+        }
+        return self::$settings;
     }
 
     /**
      * Make API request to Razorpay
      */
-    public function makeApiCall($path, $args = [], $method = 'GET')
+    private static function request($endpoint, $method = 'GET', $data = [])
     {
-        $keys = $this->settings->getApiKeys();
-        $mode = $this->settings->getMode();
+        // Input validation
+        if (empty($endpoint) || !is_string($endpoint)) {
+            return new \WP_Error('invalid_endpoint', 'Invalid API endpoint provided');
+        }
+
+        // Validate HTTP method
+        $allowedMethods = ['GET', 'POST', 'PUT', 'DELETE'];
+        if (!in_array(strtoupper($method), $allowedMethods, true)) {
+            return new \WP_Error('invalid_method', 'Invalid HTTP method');
+        }
+
+        $keys = self::getSettings()->getApiKeys();
+        $mode = self::getSettings()->getMode();
         
         // Validate keys are not empty
         if (empty($keys['api_key']) || empty($keys['api_secret'])) {
@@ -79,7 +106,7 @@ class RazorpayAPI
                 sprintf(
                     'Calling: %s %s | Mode: %s | Key: %s...',
                     $method,
-                    $path,
+                    $endpoint,
                     $mode,
                     substr($apiKey, 0, 10)
                 ),
@@ -87,25 +114,24 @@ class RazorpayAPI
             );
         }
         
-        $headers = [
-            'Authorization' => 'Basic ' . base64_encode($apiKey . ':' . $apiSecret),
-            'Content-type' => 'application/json'
+        $url = self::$baseUrl . $endpoint;
+        
+        $args = [
+            'method'  => strtoupper($method),
+            'headers' => [
+                'Authorization' => 'Basic ' . base64_encode($apiKey . ':' . $apiSecret),
+                'Content-Type'  => 'application/json',
+                'User-Agent'    => 'RazorpayFluentCart/1.0.0 WordPress/' . get_bloginfo('version'),
+            ],
+            'timeout' => 30,
+            'sslverify' => true, // Always verify SSL
         ];
 
-        // Match reference format exactly
-        if ($method === 'POST') {
-            $url = 'https://api.razorpay.com/v1/' . $path . '/';
-            $response = wp_remote_post($url, [
-                'headers' => $headers,
-                'body' => !empty($args) ? json_encode($args) : ''
-            ]);
-        } else {
-            $url = 'https://api.razorpay.com/v1/' . $path . '/';
-            $response = wp_remote_get($url, [
-                'headers' => $headers,
-                'body' => $args
-            ]);
+        if ($method === 'POST' && !empty($data)) {
+            $args['body'] = wp_json_encode($data);
         }
+
+        $response = wp_remote_request($url, $args);
 
         if (is_wp_error($response)) {
             return $response;
@@ -114,70 +140,45 @@ class RazorpayAPI
         $body = wp_remote_retrieve_body($response);
         $responseData = json_decode($body, true);
 
-        // Check for error in response (match reference exactly)
-        if (!empty($responseData['error'])) {
+        $statusCode = wp_remote_retrieve_response_code($response);
+        
+        // Check for error in response
+        if ($statusCode >= 400 || !empty($responseData['error'])) {
             $message = Arr::get($responseData, 'error.description');
             if (!$message) {
-                $message = 'Unknown RazorPay API request error';
+                $message = 'Unknown Razorpay API request error';
             }
-            return new \WP_Error(423, $message, $responseData);
+            return new \WP_Error(
+                'razorpay_api_error',
+                $message,
+                ['status' => $statusCode, 'response' => $responseData]
+            );
         }
 
         return $responseData;
     }
 
     /**
-     * Create order
+     * Get Razorpay object (for GET requests)
      */
-    public function createOrder($data)
+    public static function getRazorpayObject($endpoint, $params = [])
     {
-        return $this->makeApiCall('orders', $data, 'POST');
+        return self::request($endpoint, 'GET', $params);
     }
 
     /**
-     * Get payment
+     * Create Razorpay object (for POST requests)
      */
-    public function getPayment($paymentId)
+    public static function createRazorpayObject($endpoint, $data = [])
     {
-        return $this->makeApiCall('payments/' . $paymentId, [], 'GET');
+        return self::request($endpoint, 'POST', $data);
     }
 
     /**
-     * Create payment link (for hosted checkout)
+     * Delete/Update Razorpay object (for POST requests used for deletion)
      */
-    public function createPaymentLink($data)
+    public static function deleteRazorpayObject($endpoint, $data = [])
     {
-        return $this->makeApiCall('payment_links', $data, 'POST');
-    }
-
-    /**
-     * Capture a payment (changes status from authorized to captured)
-     * 
-     * @param string $paymentId The payment ID to capture
-     * @param int $amount The amount to capture (in smallest currency unit, e.g., paise for INR)
-     * @param string $currency The currency code (e.g., 'INR')
-     * @return array|\WP_Error
-     */
-    public function capturePayment($paymentId, $amount, $currency)
-    {
-        $captureData = [
-            'amount' => intval($amount),
-            'currency' => strtoupper($currency)
-        ];
-
-        return $this->makeApiCall('payments/' . $paymentId . '/capture', $captureData, 'POST');
-    }
-
-    /**
-     * Create refund
-     */
-    public function createRefund($paymentId, $amount)
-    {
-        $refundData = [
-            'amount' => $amount // Amount in paise (smallest currency unit)
-        ];
-
-        return $this->makeApiCall('payments/' . $paymentId . '/refund', $refundData, 'POST');
+        return self::request($endpoint, 'POST', $data);
     }
 }
-

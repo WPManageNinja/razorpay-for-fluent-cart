@@ -27,11 +27,6 @@ class RazorpayGateway extends AbstractPaymentGateway
             new Settings\RazorpaySettingsBase(), 
             null // No subscription support
         );
-
-        add_filter('fluent_cart/payment_methods_with_custom_checkout_buttons', function ($methods) {
-            $methods[] = 'razorpay';
-            return $methods;
-        });
     }
 
     public function meta(): array
@@ -254,7 +249,7 @@ class RazorpayGateway extends AbstractPaymentGateway
             );
         }
 
-        return (new API\RazorpayAPI())->createRefund($transaction->vendor_charge_id, $amount);
+        return (new Refund\RazorpayRefund())->processRemoteRefund($transaction, $amount, $args);
     }
 
     public function confirmModalPayment()
@@ -285,8 +280,7 @@ class RazorpayGateway extends AbstractPaymentGateway
             ], 400);
         }
 
-        $api = new API\RazorpayAPI();
-        $vendorPayment = $api->getPayment($paymentId);
+        $vendorPayment = API\RazorpayAPI::getRazorpayObject('payments/' . $paymentId);
 
         if (is_wp_error($vendorPayment)) {
             wp_send_json_error([
@@ -302,7 +296,12 @@ class RazorpayGateway extends AbstractPaymentGateway
             $captureAmount = Arr::get($vendorPayment, 'amount');
             $currency = Arr::get($vendorPayment, 'currency', 'INR');
             
-            $capturedPayment = $api->capturePayment($paymentId, $captureAmount, $currency);
+            $captureData = [
+                'amount' => intval($captureAmount),
+                'currency' => strtoupper($currency)
+            ];
+            
+            $capturedPayment = API\RazorpayAPI::createRazorpayObject('payments/' . $paymentId . '/capture', $captureData);
             
             if (is_wp_error($capturedPayment)) {
                 wp_send_json_error([
@@ -402,12 +401,19 @@ class RazorpayGateway extends AbstractPaymentGateway
                 ],
                 'tooltip' => __('Select if you want to enable SMS and Email notifications from Razorpay', 'razorpay-for-fluent-cart')
             ],
+            'webhook_secret' => [
+                'value'       => '',
+                'label'       => __('Webhook Secret', 'razorpay-for-fluent-cart'),
+                'type'        => 'password',
+                'placeholder' => __('Your webhook secret key', 'razorpay-for-fluent-cart'),
+                'tooltip'     => __('Enter the webhook secret from your Razorpay Dashboard (Settings > Webhooks). This is used to verify incoming webhooks.', 'razorpay-for-fluent-cart')
+            ],
             'webhook_info' => [
                 'value' => sprintf(
                     '<div><p><b>%s</b><code class="copyable-content">%s</code></p><p>%s</p></div>',
                     __('Webhook URL: ', 'razorpay-for-fluent-cart'),
                     $webhook_url,
-                    __('Configure this webhook URL in your Razorpay Dashboard under Settings > Webhooks to receive payment notifications.', 'razorpay-for-fluent-cart')
+                    __('Configure this webhook URL in your Razorpay Dashboard under Settings > Webhooks to receive payment notifications. Make sure to also configure the Webhook Secret above for security.', 'razorpay-for-fluent-cart')
                 ),
                 'label' => __('Webhook Configuration', 'razorpay-for-fluent-cart'),
                 'type'  => 'html_attr'
