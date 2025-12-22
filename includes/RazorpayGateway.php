@@ -100,7 +100,7 @@ class RazorpayGateway extends AbstractPaymentGateway
     {
         $currency = CurrencySettings::get('currency');
 
-        if (!in_array(strtoupper($currency), self::getRazorpaySupportedCurrency())) {
+        if (!RazorpayHelper::checkCurrencySupport()) {
             wp_send_json([
                 'status'  => 'failed',
                 'message' => __('Razorpay does not support the currency you are using!', 'razorpay-for-fluent-cart')
@@ -124,78 +124,9 @@ class RazorpayGateway extends AbstractPaymentGateway
         }
     }
 
-    public static function getRazorpaySupportedCurrency(): array
+    public function isCurrencySupported(): bool
     {
-        return $razorpay_supported_currencies = [
-            'AED', // United Arab Emirates Dirham
-            'ALL', // Albanian Lek
-            'AMD', // Armenian Dram
-            'ARS', // Argentine Peso
-            'AUD', // Australian Dollar
-            'AWG', // Aruban Florin
-            'BBD', // Barbadian Dollar
-            'BDT', // Bangladeshi Taka
-            'BMD', // Bermudian Dollar
-            'BND', // Brunei Dollar
-            'BOB', // Bolivian Boliviano
-            'BSD', // Bahamian Dollar
-            'BWP', // Botswana Pula
-            'BZD', // Belize Dollar
-            'CAD', // Canadian Dollar
-            'CHF', // Swiss Franc
-            'CNY', // Chinese Yuan
-            'COP', // Colombian Peso
-            'CRC', // Costa Rican Colon
-            'CZK', // Czech Koruna
-            'DKK', // Danish Krone
-            'DOP', // Dominican Peso
-            'EUR', // Euro
-            'FJD', // Fijian Dollar
-            'GBP', // British Pound Sterling
-            'GHS', // Ghanaian Cedi
-            'GIP', // Gibraltar Pound
-            'GMD', // Gambian Dalasi
-            'GTQ', // Guatemalan Quetzal
-            'GYD', // Guyanese Dollar
-            'HKD', // Hong Kong Dollar
-            'HNL', // Honduran Lempira
-            'HRK', // Croatian Kuna
-            'HTG', // Haitian Gourde
-            'HUF', // Hungarian Forint
-            'IDR', // Indonesian Rupiah
-            'ILS', // Israeli New Shekel
-            'INR', // Indian Rupee
-            'JPY', // Japanese Yen
-            'KRW', // South Korean Won
-            'KWD', // Kuwaiti Dinar
-            'LKR', // Sri Lankan Rupee
-            'MAD', // Moroccan Dirham
-            'MXN', // Mexican Peso
-            'MYR', // Malaysian Ringgit
-            'NGN', // Nigerian Naira
-            'NOK', // Norwegian Krone
-            'NZD', // New Zealand Dollar
-            'PEN', // Peruvian Sol
-            'PHP', // Philippine Peso
-            'PKR', // Pakistani Rupee
-            'PLN', // Polish Zloty
-            'QAR', // Qatari Riyal
-            'RON', // Romanian Leu
-            'RUB', // Russian Ruble
-            'SAR', // Saudi Riyal
-            'SEK', // Swedish Krona
-            'SGD', // Singapore Dollar
-            'THB', // Thai Baht
-            'TRY', // Turkish Lira
-            'TWD', // Taiwan Dollar
-            'UAH', // Ukrainian Hryvnia
-            'USD', // United States Dollar
-            'UYU', // Uruguayan Peso
-            'UZS', // Uzbekistani Soʻm
-            'YER', // Yemeni Rial
-        ];
-        
-        
+        return (RazorpayHelper::checkCurrencySupport());
     }
 
     public function handleIPN(): void
