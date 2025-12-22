@@ -7,6 +7,7 @@ use FluentCart\App\Helpers\Helper;
 use FluentCart\App\Models\OrderTransaction;
 use FluentCart\Framework\Support\Arr;
 use FluentCart\App\Services\Payments\PaymentInstance;
+use FluentCart\App\Services\PluginInstaller\PaymentAddonManager;
 use FluentCart\App\Modules\PaymentMethods\Core\AbstractPaymentGateway;
 
 class RazorpayGateway extends AbstractPaymentGateway
@@ -32,6 +33,8 @@ class RazorpayGateway extends AbstractPaymentGateway
     public function meta(): array
     {
         $logo = RAZORPAY_FC_PLUGIN_URL . 'assets/images/razorpay-logo.svg';
+
+        $addonStatus = PaymentAddonManager::getAddonStatus($this->addonSlug, $this->addonFile);
         
         return [
             'title'              => __('Razorpay', 'razorpay-for-fluent-cart'),
@@ -46,6 +49,7 @@ class RazorpayGateway extends AbstractPaymentGateway
             'status'             => $this->settings->get('is_active') === 'yes',
             'upcoming'           => false,
             'is_addon'           => true,
+            'addon_status'       => $addonStatus,
             'addon_source'       => [
                 'type' => 'github',
                 'link' => 'https://github.com/WPManageNinja/razorpay-for-fluent-cart/releases/latest',
@@ -65,10 +69,6 @@ class RazorpayGateway extends AbstractPaymentGateway
         add_filter('fluent_cart/payment_methods/razorpay_settings', [$this, 'getSettings'], 10, 2);
 
         (new Confirmations\RazorpayConfirmations())->init();
-
-        // Add AJAX handler for modal payment confirmation
-        add_action('wp_ajax_fluent_cart_razorpay_confirm_payment', [$this, 'confirmModalPayment']);
-        add_action('wp_ajax_nopriv_fluent_cart_razorpay_confirm_payment', [$this, 'confirmModalPayment']);
     }
 
     public function makePaymentFromPaymentInstance(PaymentInstance $paymentInstance)
@@ -105,6 +105,22 @@ class RazorpayGateway extends AbstractPaymentGateway
                 'status'  => 'failed',
                 'message' => __('Razorpay does not support the currency you are using!', 'razorpay-for-fluent-cart')
             ], 422);
+        }
+
+        // Check if using international currency and add helpful note
+        if (strtoupper($currency) !== 'INR') {
+            $mode = $this->settings->get('payment_mode', 'test');
+            $modeText = $mode === 'live' ? 'live' : 'test';
+            
+            fluent_cart_add_log(
+                'Razorpay International Currency', 
+                sprintf(
+                    'Using %s currency. International payments must be enabled in Razorpay Dashboard (Settings > Configuration > Payment Methods) for %s mode.',
+                    $currency,
+                    $modeText
+                ), 
+                'info'
+            );
         }
     }
 
@@ -252,81 +268,6 @@ class RazorpayGateway extends AbstractPaymentGateway
         return (new Refund\RazorpayRefund())->processRemoteRefund($transaction, $amount, $args);
     }
 
-    public function confirmModalPayment()
-    {
-        $transactionHash = sanitize_text_field(Arr::get($_REQUEST, 'transaction_hash'));
-        
-        if (!$transactionHash) {
-            wp_send_json_error([
-                'message' => __('Invalid request', 'razorpay-for-fluent-cart')
-            ], 400);
-        }
-
-        $transaction = OrderTransaction::query()
-            ->where('uuid', $transactionHash)
-            ->where('payment_method', 'razorpay')
-            ->first();
-
-        if (!$transaction || $transaction->status !== 'pending') {
-            wp_send_json_error([
-                'message' => __('Invalid transaction', 'razorpay-for-fluent-cart')
-            ], 400);
-        }
-
-        $paymentId = sanitize_text_field(Arr::get($_REQUEST, 'razorpay_payment_id'));
-        if (!$paymentId) {
-            wp_send_json_error([
-                'message' => __('Payment ID is required', 'razorpay-for-fluent-cart')
-            ], 400);
-        }
-
-        $vendorPayment = API\RazorpayAPI::getRazorpayObject('payments/' . $paymentId);
-
-        if (is_wp_error($vendorPayment)) {
-            wp_send_json_error([
-                'message' => $vendorPayment->get_error_message()
-            ], 400);
-        }
-
-        $status = Arr::get($vendorPayment, 'status');
-        $captured = Arr::get($vendorPayment, 'captured', false);
-        
-        // If payment is authorized but not captured, capture it
-        if ($status === 'authorized' && !$captured) {
-            $captureAmount = Arr::get($vendorPayment, 'amount');
-            $currency = Arr::get($vendorPayment, 'currency', 'INR');
-            
-            $captureData = [
-                'amount' => intval($captureAmount),
-                'currency' => strtoupper($currency)
-            ];
-            
-            $capturedPayment = API\RazorpayAPI::createRazorpayObject('payments/' . $paymentId . '/capture', $captureData);
-            
-            if (is_wp_error($capturedPayment)) {
-                wp_send_json_error([
-                    'message' => __('Failed to capture payment: ', 'razorpay-for-fluent-cart') . $capturedPayment->get_error_message()
-                ], 400);
-            }
-            
-            // Update vendorPayment with captured payment data
-            $vendorPayment = $capturedPayment;
-            $status = Arr::get($vendorPayment, 'status');
-        }
-
-        if ($status == 'paid' || $status == 'captured') {
-            (new Confirmations\RazorpayConfirmations())->confirmPaymentSuccessByCharge($transaction, $vendorPayment);
-            
-            wp_send_json_success([
-                'message' => __('Payment successful', 'razorpay-for-fluent-cart'),
-                'redirect_url' => $this->getSuccessUrl($transaction)
-            ]);
-        }
-
-        wp_send_json_error([
-            'message' => __('Payment verification failed', 'razorpay-for-fluent-cart')
-        ], 400);
-    }
 
     public function fields(): array
     {
@@ -381,15 +322,30 @@ class RazorpayGateway extends AbstractPaymentGateway
                     ],
                 ]
             ],
-            'checkout_type' => [
-                'value'   => 'modal',
-                'label'   => __('Checkout Type', 'razorpay-for-fluent-cart'),
-                'type'    => 'radio',
-                'options' => [
-                    'modal'  => __('Modal Checkout (Popup)', 'razorpay-for-fluent-cart'),
-                    'hosted' => __('Hosted Checkout (Redirect)', 'razorpay-for-fluent-cart')
-                ],
-                'tooltip' => __('Choose how customers will complete their payment.', 'razorpay-for-fluent-cart')
+            'international_payments_notice' => [
+                'value' => sprintf(
+                    '<div style="padding: 12px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; margin: 10px 0;">
+                        <strong>%s</strong><br/>
+                        %s
+                        <ul style="margin: 8px 0 0 20px;">
+                            <li>%s</li>
+                            <li>%s</li>
+                            <li>%s</li>
+                            <li>%s</li>
+                        </ul>
+                        <p style="margin: 8px 0 0 0;"><strong>%s</strong> %s</p>
+                    </div>',
+                    __('💡 International Payments', 'razorpay-for-fluent-cart'),
+                    __('If you are using currencies other than INR (like USD, EUR, GBP, etc.), you must:', 'razorpay-for-fluent-cart'),
+                    __('Enable International Payments in Razorpay Dashboard', 'razorpay-for-fluent-cart'),
+                    __('Go to Settings > Configuration > Payment Methods', 'razorpay-for-fluent-cart'),
+                    __('Enable "International" toggle', 'razorpay-for-fluent-cart'),
+                    __('This is required even in TEST mode', 'razorpay-for-fluent-cart'),
+                    __('For Testing:', 'razorpay-for-fluent-cart'),
+                    __('Use INR currency for fastest testing, or enable international payments as mentioned above.', 'razorpay-for-fluent-cart')
+                ),
+                'label' => '',
+                'type'  => 'html_attr'
             ],
             'notification' => [
                 'value'   => [],
