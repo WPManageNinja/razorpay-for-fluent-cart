@@ -75,7 +75,7 @@ class RazorpayProcessor
             'currency'     => strtoupper($transaction->currency),
             'description'  => $this->getProductName($order),
             'order_id'     => $razorpayOrder['id'],
-            'public_key'   => $settings->getPublicKey(),
+            'api_key'      => $settings->getApiKey(),
             'name'         => get_bloginfo('name'),
             'prefill'      => [
                 'name'  => $fcCustomer->first_name . ' ' . $fcCustomer->last_name,

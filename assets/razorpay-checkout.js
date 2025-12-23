@@ -1,5 +1,5 @@
 class RazorpayCheckout {
-    #publicKey = null;
+    #apiKey = null;
     #checkoutType = null;
 
     constructor(form, orderHandler, response, paymentLoader) {
@@ -9,7 +9,7 @@ class RazorpayCheckout {
         this.paymentLoader = paymentLoader;
         this.$t = this.translate.bind(this);
         this.submitButton = window.fluentcart_checkout_vars?.submit_button;
-        this.#publicKey = response?.payment_args?.public_key;
+        this.#apiKey = response?.payment_args?.api_key;
         this.#checkoutType = response?.payment_args?.checkout_type || 'modal';
     }
 
@@ -22,7 +22,7 @@ class RazorpayCheckout {
 
         this.renderPaymentInfo();
 
-        this.#publicKey = this.data?.payment_args?.public_key;
+        this.#apiKey = this.data?.payment_args?.api_key;
 
         window.addEventListener("fluent_cart_payment_next_action_razorpay", async(e) => {
             const remoteResponse = e.detail?.response;
@@ -168,7 +168,7 @@ class RazorpayCheckout {
 
         try {
             const options = {
-                key: modalData.public_key,
+                key: modalData.api_key,
                 amount: modalData.amount,
                 currency: modalData.currency,
                 name: modalData.name,

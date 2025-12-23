@@ -30,10 +30,10 @@ class RazorpaySettingsBase extends BaseGatewaySettings
     {
         return [
             'is_active'        => 'no',
-            'test_pub_key'     => '',
-            'test_secret_key'  => '',
-            'live_pub_key'     => '',
-            'live_secret_key'  => '',
+            'test_api_key'     => '',
+            'test_key_secret'  => '',
+            'live_api_key'     => '',
+            'live_key_secret'  => '',
             'payment_mode'    => 'live',
             'checkout_type'    => 'modal',
             'notification'    => [],
@@ -63,37 +63,37 @@ class RazorpaySettingsBase extends BaseGatewaySettings
         return (new StoreSettings)->get('order_mode');
     }
 
-    public function getSecretKey($mode = 'current')
+    public function getKeySecret($mode = 'current')
     {
         if ($mode == 'current' || !$mode) {
             $mode = $this->getMode();
         }
 
         if ($mode === 'test') {
-            $secretKey = $this->get('test_secret_key');
+            $keySecret = $this->get('test_key_secret');
         } else {
-            $secretKey = $this->get('live_secret_key');
+            $keySecret = $this->get('live_key_secret');
         }
 
-        if (empty($secretKey)) {
+        if (empty($keySecret)) {
             return '';
         }
 
         // Try to decrypt - if decryption fails (returns false), return original value (plaintext)
-        $decrypted = Helper::decryptKey($secretKey);
-        return $decrypted !== false ? $decrypted : $secretKey;
+        $decrypted = Helper::decryptKey($keySecret);
+        return $decrypted !== false ? $decrypted : $keySecret;
     }
 
-    public function getPublicKey($mode = 'current')
+    public function getApiKey($mode = 'current')
     {
         if ($mode == 'current' || !$mode) {
             $mode = $this->getMode();
         }
 
         if ($mode === 'test') {
-            return $this->get('test_pub_key');
+            return $this->get('test_api_key');
         } else {
-            return $this->get('live_pub_key');
+            return $this->get('live_api_key');
         }
     }
 
@@ -114,8 +114,8 @@ class RazorpaySettingsBase extends BaseGatewaySettings
     {
         $mode = $this->getMode();
         
-        $apiKey = $this->getPublicKey($mode);
-        $apiSecret = $this->getSecretKey($mode);
+        $apiKey = $this->getApiKey($mode);
+        $apiSecret = $this->getKeySecret($mode);
         
         // Ensure keys are not empty
         if (empty($apiKey) || empty($apiSecret)) {
@@ -126,8 +126,8 @@ class RazorpaySettingsBase extends BaseGatewaySettings
                     $mode,
                     empty($apiKey) ? 'yes' : 'no',
                     empty($apiSecret) ? 'yes' : 'no',
-                    $mode === 'test' ? (empty($this->get('test_pub_key')) ? 'empty' : 'exists') : (empty($this->get('live_pub_key')) ? 'empty' : 'exists'),
-                    $mode === 'test' ? (empty($this->get('test_secret_key')) ? 'empty' : 'exists') : (empty($this->get('live_secret_key')) ? 'empty' : 'exists')
+                    $mode === 'test' ? (empty($this->get('test_api_key')) ? 'empty' : 'exists') : (empty($this->get('live_api_key')) ? 'empty' : 'exists'),
+                    $mode === 'test' ? (empty($this->get('test_key_secret')) ? 'empty' : 'exists') : (empty($this->get('live_key_secret')) ? 'empty' : 'exists')
                 ));
             }
             return [

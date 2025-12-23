@@ -132,15 +132,11 @@ class RazorpayWebhook
             $this->sendResponse(400, 'Payment ID not found');
         }
 
-        // Find transaction
         $transaction = $this->findTransactionByPayment($razorpayPayment);
 
-        if (!$transaction) {
-            $this->sendResponse(404, 'Transaction not found for payment: ' . $paymentId);
-        }
 
         // Check if already processed
-        if ($transaction->status == Status::TRANSACTION_SUCCEEDED) {
+        if (!$transaction || $transaction->status == Status::TRANSACTION_SUCCEEDED) {
             $this->sendResponse(200, 'Payment already confirmed');
         }
 
@@ -353,7 +349,6 @@ class RazorpayWebhook
         $paymentId = Arr::get($razorpayPayment, 'id');
         $notes = Arr::get($razorpayPayment, 'notes', []);
 
-        // Try to find by Razorpay order ID first
         if ($orderId) {
             $transaction = OrderTransaction::query()
                 ->where('vendor_charge_id', $orderId)
@@ -365,11 +360,9 @@ class RazorpayWebhook
             }
         }
 
-        // Try to find by transaction UUID in notes
-        $transactionHash = Arr::get($notes, 'transaction_id');
-        if ($transactionHash) {
+        if ($paymentId) {
             $transaction = OrderTransaction::query()
-                ->where('uuid', $transactionHash)
+                ->where('vendor_charge_id', $paymentId)
                 ->where('payment_method', 'razorpay')
                 ->first();
 
@@ -378,14 +371,14 @@ class RazorpayWebhook
             }
         }
 
-        // Try to find by payment ID in meta
-        $transactions = OrderTransaction::query()
-            ->where('payment_method', 'razorpay')
-            ->get();
+        $transactionHash = Arr::get($notes, 'transaction_id');
+        if ($transactionHash) {
+            $transaction = OrderTransaction::query()
+                ->where('uuid', $transactionHash)
+                ->where('payment_method', 'razorpay')
+                ->first();
 
-        foreach ($transactions as $transaction) {
-            $meta = $transaction->meta ?? [];
-            if (Arr::get($meta, 'razorpay_payment_id') == $paymentId) {
+            if ($transaction) {
                 return $transaction;
             }
         }

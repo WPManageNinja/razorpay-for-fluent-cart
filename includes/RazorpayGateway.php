@@ -100,7 +100,7 @@ class RazorpayGateway extends AbstractPaymentGateway
             'message'      => __('Order info retrieved!', 'razorpay-for-fluent-cart'),
             'data'         => [],
             'payment_args' => [
-                'public_key' => $this->settings->getPublicKey('current'),
+                'api_key' => $this->settings->getApiKey('current'),
                 'checkout_type' => $this->settings->get('checkout_type')
             ],
         ], 200);
@@ -153,7 +153,7 @@ class RazorpayGateway extends AbstractPaymentGateway
     {
         return [
             'fct_razorpay_data' => [
-                'public_key' => $this->settings->getPublicKey(),
+                'api_key' => $this->settings->getApiKey(),
                 'checkout_type' => $this->settings->get('checkout_type'),
                 'ajax_url' => admin_url('admin-ajax.php'),
                 'translations' => [
@@ -221,17 +221,17 @@ class RazorpayGateway extends AbstractPaymentGateway
                         'label'  => __('Live credentials', 'razorpay-for-fluent-cart'),
                         'value'  => 'live',
                         'schema' => [
-                            'live_pub_key' => [
+                            'live_api_key' => [
                                 'value'       => '',
-                                'label'       => __('Live Public Key', 'razorpay-for-fluent-cart'),
+                                'label'       => __('Live API Key', 'razorpay-for-fluent-cart'),
                                 'type'        => 'text',
                                 'placeholder' => __('rzp_live_xxxxxxxxxxxxx', 'razorpay-for-fluent-cart'),
                             ],
-                            'live_secret_key' => [
+                            'live_key_secret' => [
                                 'value'       => '',
-                                'label'       => __('Live Secret Key', 'razorpay-for-fluent-cart'),
+                                'label'       => __('Live Key Secret', 'razorpay-for-fluent-cart'),
                                 'type'        => 'password',
-                                'placeholder' => __('Your live secret key', 'razorpay-for-fluent-cart'),
+                                'placeholder' => __('Your live key secret', 'razorpay-for-fluent-cart'),
                             ],
                             'live_webhook_secret' => [
                                 'value'       => '',
@@ -246,17 +246,17 @@ class RazorpayGateway extends AbstractPaymentGateway
                         'label'  => __('Test credentials', 'razorpay-for-fluent-cart'),
                         'value'  => 'test',
                         'schema' => [
-                            'test_pub_key' => [
+                            'test_api_key' => [
                                 'value'       => '',
-                                'label'       => __('Test Public Key', 'razorpay-for-fluent-cart'),
+                                'label'       => __('Test API Key', 'razorpay-for-fluent-cart'),
                                 'type'        => 'text',
                                 'placeholder' => __('rzp_test_xxxxxxxxxxxxx', 'razorpay-for-fluent-cart'),
                             ],
-                            'test_secret_key' => [
+                            'test_key_secret' => [
                                 'value'       => '',
-                                'label'       => __('Test Secret Key', 'razorpay-for-fluent-cart'),
+                                'label'       => __('Test Key Secret', 'razorpay-for-fluent-cart'),
                                 'type'        => 'password',
-                                'placeholder' => __('Your test secret key', 'razorpay-for-fluent-cart'),
+                                'placeholder' => __('Your test key secret', 'razorpay-for-fluent-cart'),
                             ],
                             'test_webhook_secret' => [
                                 'value'       => '',
@@ -270,7 +270,7 @@ class RazorpayGateway extends AbstractPaymentGateway
             ],
             'international_payments_notice' => [
                 'value' => sprintf(
-                    '<div style="padding: 12px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; margin: 10px 0;">
+                    '<div style="padding: 12px; background: light-dark(#fff3cd, #3d3716); border: 1px solid light-dark(#ffc107, #806200); border-radius: 4px; margin: 10px 0; color: light-dark(#856404, #ffc107);">
                         <strong>%s</strong><br/>
                         %s
                         <ul style="margin: 8px 0 0 20px;">
@@ -289,34 +289,24 @@ class RazorpayGateway extends AbstractPaymentGateway
                 'label' => '',
                 'type'  => 'html_attr'
             ],
-            'notification' => [
-                'value'   => [],
-                'label'   => __('Razorpay Notifications', 'razorpay-for-fluent-cart'),
-                'type'    => 'checkbox_group',
-                'options' => [
-                    'sms'   => __('SMS', 'razorpay-for-fluent-cart'),
-                    'email' => __('Email', 'razorpay-for-fluent-cart')
-                ],
-                'tooltip' => __('Select if you want to enable SMS and Email notifications from Razorpay', 'razorpay-for-fluent-cart')
-            ],
             'webhook_info' => [
                 'value' => sprintf(
-                    '<div style="padding: 12px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; margin: 10px 0;">
+                    '<div style="padding: 12px; background: light-dark(#f8f9fa, #1a1d21); border: 1px solid light-dark(#dee2e6, #3a3f47); border-radius: 4px; margin: 10px 0; color: light-dark(#212529, #e9ecef);">
                         <p style="margin: 0 0 12px 0;">
                             <strong>%s</strong>
-                            <code class="copyable-content" style="display: block; padding: 8px 12px; background: #ffffff; border: 1px solid #dee2e6; border-radius: 4px; margin: 8px 0; font-family: monospace; word-break: break-all;">%s</code>
+                            <code class="copyable-content" style="display: block; padding: 8px 12px; background: light-dark(#ffffff, #2d3139); border: 1px solid light-dark(#dee2e6, #3a3f47); border-radius: 4px; margin: 8px 0; font-family: monospace; word-break: break-all; color: light-dark(#212529, #e9ecef);">%s</code>
                         </p>
                         <p style="margin: 0 0 12px 0;">%s</p>
                         <div style="margin: 12px 0 0 0;">
                             <strong>%s</strong>
                             <ul style="margin: 8px 0 0 20px; list-style-type: disc;">
-                                <li><code>payment.authorized</code> - %s</li>
-                                <li><code>payment.captured</code> - %s</li>
-                                <li><code>payment.failed</code> - %s</li>
-                                <li><code>refund.processed</code> - %s</li>
+                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">payment.authorized</code> - %s</li>
+                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">payment.captured</code> - %s</li>
+                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">payment.failed</code> - %s</li>
+                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">refund.processed</code> - %s</li>
                             </ul>
                         </div>
-                        <p style="margin: 12px 0 0 0; padding: 8px 12px; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px;">
+                        <p style="margin: 12px 0 0 0; padding: 8px 12px; background: light-dark(#fff3cd, #3d3716); border-left: 3px solid light-dark(#ffc107, #806200); border-radius: 4px; color: light-dark(#856404, #ffc107);">
                             <strong>⚠️ %s</strong> %s
                         </p>
                     </div>',
@@ -343,14 +333,14 @@ class RazorpayGateway extends AbstractPaymentGateway
         $errors = [];
 
         if ($mode == 'test') {
-            if (empty(Arr::get($data, 'test_pub_key')) || empty(Arr::get($data, 'test_secret_key'))) {
-                $errors['test_pub_key'] = __('Please provide Test Public Key and Test Secret Key', 'razorpay-for-fluent-cart');
+            if (empty(Arr::get($data, 'test_api_key')) || empty(Arr::get($data, 'test_key_secret'))) {
+                $errors['test_api_key'] = __('Please provide Test API Key and Test Key Secret', 'razorpay-for-fluent-cart');
             }
         }
 
         if ($mode == 'live') {
-            if (empty(Arr::get($data, 'live_pub_key')) || empty(Arr::get($data, 'live_secret_key'))) {
-                $errors['live_pub_key'] = __('Please provide Live Public Key and Live Secret Key', 'razorpay-for-fluent-cart');
+            if (empty(Arr::get($data, 'live_api_key')) || empty(Arr::get($data, 'live_key_secret'))) {
+                $errors['live_api_key'] = __('Please provide Live API Key and Live Key Secret', 'razorpay-for-fluent-cart');
             }
         }
 
@@ -363,12 +353,12 @@ class RazorpayGateway extends AbstractPaymentGateway
 
         // Only encrypt if key is not empty and not already encrypted
         if ($mode == 'test') {
-            if (!empty($data['test_secret_key'])) {
-                $data['test_secret_key'] = Helper::encryptKey($data['test_secret_key']);
+            if (!empty($data['test_key_secret'])) {
+                $data['test_key_secret'] = Helper::encryptKey($data['test_key_secret']);
             }
         } else {
-            if (!empty($data['live_secret_key'])) {
-                $data['live_secret_key'] = Helper::encryptKey($data['live_secret_key']);
+            if (!empty($data['live_key_secret'])) {
+                $data['live_key_secret'] = Helper::encryptKey($data['live_key_secret']);
             }
         }
 
