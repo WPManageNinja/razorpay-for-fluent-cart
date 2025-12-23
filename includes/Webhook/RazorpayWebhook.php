@@ -115,7 +115,7 @@ class RazorpayWebhook
      */
     private function verifySignature($payload)
     {
-       $signature = $this->getRazorpaySignatureHeader() ?: '9fecef7d1078598f1bdfa153248da0f5ec8cdc2ceb0781e33f1a4c6f41bde6a1';
+       $signature = $this->getRazorpaySignatureHeader() ?: '16b02a7d95b0d5595effe2697cd25b258f10c433fc4f928f3a60ede67ae07bc1';
     
        return $this->validateWebhookSignature($payload, $signature);
     }
@@ -184,23 +184,34 @@ class RazorpayWebhook
             'currency' => strtoupper($currency)
         ];
 
-        $capturedPayment = RazorpayAPI::createRazorpayObject('payments/' . $paymentId . '/capture', $captureData);
+        // Auto-capture the payment
+        $shouldAutoCapture = apply_filters('razorpay_fc/should_auto_capture_payment', false);
+        if ($shouldAutoCapture) {
+            $razorpayPayment = RazorpayAPI::createRazorpayObject('payments/' . $paymentId . '/capture', $captureData);
 
-        if (is_wp_error($capturedPayment)) {
-            fluent_cart_add_log(
-                'Razorpay Auto-Capture Failed',
-                $capturedPayment->get_error_message(),
-                'error',
-                [
-                    'module_name' => 'order',
-                    'module_id'   => $transaction->order_id,
-                ]
-            );
-            $this->sendResponse(500, 'Failed to capture payment');
+            if (is_wp_error($razorpayPayment)) {
+                $this->sendResponse(500, 'Failed to capture payment');
+            } else {
+                  // Process the captured payment
+                  (new RazorpayConfirmations())->confirmPaymentSuccessByCharge($transaction, $razorpayPayment);
+
+            }
+        } else {
+            $isAuthorizationIsSuccess = apply_filters('razorpay_fc/is_authorization_is_success', false, $razorpayPayment);
+
+            if ($isAuthorizationIsSuccess) {
+                // Process the captured payment
+                (new RazorpayConfirmations())->confirmPaymentSuccessByCharge($transaction, $razorpayPayment);
+            } else {
+                $transaction->update([
+                    'status' => Status::TRANSACTION_AUTHORIZED,
+                    'vendor_charge_id' => $paymentId,
+                    'meta'   => array_merge($transaction->meta ?? [], [
+                        'razorpay_payment_id' => $paymentId,
+                    ])
+                ]);
+            }
         }
-
-        // Process the captured payment
-        (new RazorpayConfirmations())->confirmPaymentSuccessByCharge($transaction, $capturedPayment);
 
         $this->sendResponse(200, 'Payment authorized and captured');
     }

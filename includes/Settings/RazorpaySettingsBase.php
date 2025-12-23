@@ -119,17 +119,6 @@ class RazorpaySettingsBase extends BaseGatewaySettings
         
         // Ensure keys are not empty
         if (empty($apiKey) || empty($apiSecret)) {
-            // For debugging: log what we got
-            if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log(sprintf(
-                    'Razorpay getApiKeys: Mode=%s, KeyEmpty=%s, SecretEmpty=%s, RawKey=%s, RawSecret=%s',
-                    $mode,
-                    empty($apiKey) ? 'yes' : 'no',
-                    empty($apiSecret) ? 'yes' : 'no',
-                    $mode === 'test' ? (empty($this->get('test_api_key')) ? 'empty' : 'exists') : (empty($this->get('live_api_key')) ? 'empty' : 'exists'),
-                    $mode === 'test' ? (empty($this->get('test_key_secret')) ? 'empty' : 'exists') : (empty($this->get('live_key_secret')) ? 'empty' : 'exists')
-                ));
-            }
             return [
                 'api_key' => '',
                 'api_secret' => ''
