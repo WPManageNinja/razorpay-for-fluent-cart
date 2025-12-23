@@ -34,7 +34,7 @@ class RazorpayConfirmations
             ->where('payment_method', 'razorpay')
             ->first();
 
-        if (!$transaction || $transaction->status !== 'pending') {
+        if (!$transaction) {
             wp_send_json_error([
                 'message' => __('Invalid transaction', 'razorpay-for-fluent-cart')
             ], 400);
