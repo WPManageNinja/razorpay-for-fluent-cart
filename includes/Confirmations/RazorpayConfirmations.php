@@ -9,6 +9,7 @@ use FluentCart\App\Models\OrderTransaction;
 use FluentCart\Framework\Support\Arr;
 use RazorpayFluentCart\API\RazorpayAPI;
 use RazorpayFluentCart\RazorpayHelper;
+use FluentCart\App\Helpers\CurrenciesHelper;
 
 class RazorpayConfirmations
 {
@@ -126,6 +127,10 @@ class RazorpayConfirmations
         $status = Arr::get($chargeData, 'status');
         $method = Arr::get($chargeData, 'method', '');
 
+        if (CurrenciesHelper::isZeroDecimal($currency)) {
+            $amount = (int) $amount * 100;
+        }
+
         $status = RazorpayHelper::getFctStatusFromRazorpayStatus($status);
 
         $updateData = [
@@ -179,7 +184,7 @@ class RazorpayConfirmations
             sprintf(
                 'Payment confirmed successfully. Payment ID: %s, Amount: %s %s, Method: %s',
                 $paymentId,
-                $amount,
+                $amount / 100,
                 $currency,
                 $method
             ),

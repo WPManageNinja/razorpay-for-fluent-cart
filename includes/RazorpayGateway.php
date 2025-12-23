@@ -116,22 +116,6 @@ class RazorpayGateway extends AbstractPaymentGateway
                 'message' => __('Razorpay does not support the currency you are using!', 'razorpay-for-fluent-cart')
             ], 422);
         }
-
-        // Check if using international currency and add helpful note
-        if (strtoupper($currency) !== 'INR') {
-            $mode = $this->settings->get('payment_mode', 'test');
-            $modeText = $mode === 'live' ? 'live' : 'test';
-            
-            fluent_cart_add_log(
-                'Razorpay International Currency', 
-                sprintf(
-                    'Using %s currency. International payments must be enabled in Razorpay Dashboard (Settings > Configuration > Payment Methods) for %s mode.',
-                    $currency,
-                    $modeText
-                ), 
-                'info'
-            );
-        }
     }
 
     public function isCurrencySupported(): bool
@@ -249,6 +233,12 @@ class RazorpayGateway extends AbstractPaymentGateway
                                 'type'        => 'password',
                                 'placeholder' => __('Your live secret key', 'razorpay-for-fluent-cart'),
                             ],
+                            'live_webhook_secret' => [
+                                'value'       => '',
+                                'label'       => __('Live Webhook Secret', 'razorpay-for-fluent-cart'),
+                                'type'        => 'password',
+                                'placeholder' => __('Your live webhook secret', 'razorpay-for-fluent-cart'),
+                            ],
                         ]
                     ],
                     [
@@ -268,6 +258,12 @@ class RazorpayGateway extends AbstractPaymentGateway
                                 'type'        => 'password',
                                 'placeholder' => __('Your test secret key', 'razorpay-for-fluent-cart'),
                             ],
+                            'test_webhook_secret' => [
+                                'value'       => '',
+                                'label'       => __('Test Webhook Secret', 'razorpay-for-fluent-cart'),
+                                'type'        => 'password',
+                                'placeholder' => __('Your test webhook secret', 'razorpay-for-fluent-cart'),
+                            ],
                         ],
                     ],
                 ]
@@ -280,19 +276,15 @@ class RazorpayGateway extends AbstractPaymentGateway
                         <ul style="margin: 8px 0 0 20px;">
                             <li>%s</li>
                             <li>%s</li>
-                            <li>%s</li>
-                            <li>%s</li>
                         </ul>
                         <p style="margin: 8px 0 0 0;"><strong>%s</strong> %s</p>
                     </div>',
                     __('💡 International Payments', 'razorpay-for-fluent-cart'),
-                    __('If you are using currencies other than INR (like USD, EUR, GBP, etc.), you must:', 'razorpay-for-fluent-cart'),
+                    __('If you want to accept payments in payment from international customers, you must:', 'razorpay-for-fluent-cart'),
                     __('Enable International Payments in Razorpay Dashboard', 'razorpay-for-fluent-cart'),
                     __('Go to Settings > Configuration > Payment Methods', 'razorpay-for-fluent-cart'),
-                    __('Enable "International" toggle', 'razorpay-for-fluent-cart'),
-                    __('This is required even in TEST mode', 'razorpay-for-fluent-cart'),
                     __('For Testing:', 'razorpay-for-fluent-cart'),
-                    __('Use INR currency for fastest testing, or enable international payments as mentioned above.', 'razorpay-for-fluent-cart')
+                    __('Use with local cards for fastest testing, or enable international payments as mentioned above.', 'razorpay-for-fluent-cart')
                 ),
                 'label' => '',
                 'type'  => 'html_attr'
@@ -307,19 +299,37 @@ class RazorpayGateway extends AbstractPaymentGateway
                 ],
                 'tooltip' => __('Select if you want to enable SMS and Email notifications from Razorpay', 'razorpay-for-fluent-cart')
             ],
-            'webhook_secret' => [
-                'value'       => '',
-                'label'       => __('Webhook Secret', 'razorpay-for-fluent-cart'),
-                'type'        => 'password',
-                'placeholder' => __('Your webhook secret key', 'razorpay-for-fluent-cart'),
-                'tooltip'     => __('Enter the webhook secret from your Razorpay Dashboard (Settings > Webhooks). This is used to verify incoming webhooks.', 'razorpay-for-fluent-cart')
-            ],
             'webhook_info' => [
                 'value' => sprintf(
-                    '<div><p><b>%s</b><code class="copyable-content">%s</code></p><p>%s</p></div>',
-                    __('Webhook URL: ', 'razorpay-for-fluent-cart'),
+                    '<div style="padding: 12px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; margin: 10px 0;">
+                        <p style="margin: 0 0 12px 0;">
+                            <strong>%s</strong>
+                            <code class="copyable-content" style="display: block; padding: 8px 12px; background: #ffffff; border: 1px solid #dee2e6; border-radius: 4px; margin: 8px 0; font-family: monospace; word-break: break-all;">%s</code>
+                        </p>
+                        <p style="margin: 0 0 12px 0;">%s</p>
+                        <div style="margin: 12px 0 0 0;">
+                            <strong>%s</strong>
+                            <ul style="margin: 8px 0 0 20px; list-style-type: disc;">
+                                <li><code>payment.authorized</code> - %s</li>
+                                <li><code>payment.captured</code> - %s</li>
+                                <li><code>payment.failed</code> - %s</li>
+                                <li><code>refund.processed</code> - %s</li>
+                            </ul>
+                        </div>
+                        <p style="margin: 12px 0 0 0; padding: 8px 12px; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px;">
+                            <strong>⚠️ %s</strong> %s
+                        </p>
+                    </div>',
+                    __('Webhook URL:', 'razorpay-for-fluent-cart'),
                     $webhook_url,
-                    __('Configure this webhook URL in your Razorpay Dashboard under Settings > Webhooks to receive payment notifications. Make sure to also configure the Webhook Secret above for security.', 'razorpay-for-fluent-cart')
+                    __('Configure this webhook URL with secret in your Razorpay Dashboard under <strong>Settings > Webhooks</strong> to receive real-time payment notifications.', 'razorpay-for-fluent-cart'),
+                    __('Required Webhook Events:', 'razorpay-for-fluent-cart'),
+                    __('Payment authorized successfully', 'razorpay-for-fluent-cart'),
+                    __('Payment captured and confirmed', 'razorpay-for-fluent-cart'),
+                    __('Payment failed or declined', 'razorpay-for-fluent-cart'),
+                    __('Refund completed successfully', 'razorpay-for-fluent-cart'),
+                    __('Important:', 'razorpay-for-fluent-cart'),
+                    __('Make sure to save webhook Secret in the credentials section above for secure webhook verification.', 'razorpay-for-fluent-cart')
                 ),
                 'label' => __('Webhook Configuration', 'razorpay-for-fluent-cart'),
                 'type'  => 'html_attr'

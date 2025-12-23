@@ -99,21 +99,6 @@ class RazorpayAPI
             );
         }
         
-        // Debug: Log what we're sending (without exposing full secret)
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            fluent_cart_add_log(
-                'Razorpay API Call',
-                sprintf(
-                    'Calling: %s %s | Mode: %s | Key: %s...',
-                    $method,
-                    $endpoint,
-                    $mode,
-                    substr($apiKey, 0, 10)
-                ),
-                'info'
-            );
-        }
-        
         $url = self::$baseUrl . $endpoint;
         
         $args = [

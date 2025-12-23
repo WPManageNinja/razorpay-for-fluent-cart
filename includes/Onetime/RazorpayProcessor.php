@@ -6,6 +6,7 @@ use FluentCart\App\Services\Payments\PaymentInstance;
 use FluentCart\Framework\Support\Arr;
 use RazorpayFluentCart\API\RazorpayAPI;
 use RazorpayFluentCart\Settings\RazorpaySettingsBase;
+use FluentCart\App\Helpers\CurrenciesHelper;
 
 class RazorpayProcessor
 {
@@ -47,6 +48,10 @@ class RazorpayProcessor
                 'customer_name'  => $fcCustomer->first_name . ' ' . $fcCustomer->last_name,
             ]
         ];
+
+        if (CurrenciesHelper::isZeroDecimal($transaction->currency)) {
+            $orderData['amount'] = (int) ($transaction->total / 100);
+        }
 
         $razorpayOrder = RazorpayAPI::createRazorpayObject('orders', $orderData);
 

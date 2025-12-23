@@ -37,6 +37,8 @@ class RazorpaySettingsBase extends BaseGatewaySettings
             'payment_mode'    => 'live',
             'checkout_type'    => 'modal',
             'notification'    => [],
+            'test_webhook_secret' => '',
+            'live_webhook_secret' => '',
         ];
     }
 
@@ -92,6 +94,19 @@ class RazorpaySettingsBase extends BaseGatewaySettings
             return $this->get('test_pub_key');
         } else {
             return $this->get('live_pub_key');
+        }
+    }
+
+    public function getWebhookSecret($mode = 'current')
+    {
+        if ($mode == 'current' || !$mode) {
+            $mode = $this->getMode();
+        }
+
+        if ($mode === 'test') {
+            return $this->get('test_webhook_secret');
+        } else {
+            return $this->get('live_webhook_secret');
         }
     }
 

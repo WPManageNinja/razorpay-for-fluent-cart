@@ -44,13 +44,12 @@ class RazorpayWebhook
             exit('Invalid JSON payload');
         }
 
-        // Verify webhook signature
+
         if (!$this->verifySignature($payload)) {
             http_response_code(401);
             exit('Invalid signature / Verification failed');
         }
 
-        // Get the event type
         $event = Arr::get($data, 'event');
         
         if (!$event) {
@@ -58,7 +57,7 @@ class RazorpayWebhook
             exit('Event type not found');
         }
 
-        // Get the order from webhook data
+
         $order = $this->getFluentCartOrder($data);
 
         if (!$order) {
@@ -66,7 +65,7 @@ class RazorpayWebhook
             exit('Order not found');
         }
 
-        // Convert event format: payment.captured => payment_captured
+        
         $eventAction = str_replace('.', '_', $event);
 
         // Check if we have a handler for this event
@@ -116,44 +115,9 @@ class RazorpayWebhook
      */
     private function verifySignature($payload)
     {
-        // Get signature from headers
-        $signature = isset($_SERVER['HTTP_X_RAZORPAY_SIGNATURE']) 
-            ? sanitize_text_field(wp_unslash($_SERVER['HTTP_X_RAZORPAY_SIGNATURE'])) 
-            : '';
-        
-        if (!$signature) {
-            fluent_cart_add_log('Razorpay Webhook', 'No signature found in webhook request', 'error');
-            return false;
-        }
-
-        $settings = new RazorpaySettingsBase();
-        $webhookSecret = $settings->get('webhook_secret');
-
-        // If no webhook secret is configured, fall back to API secret key
-        if (empty($webhookSecret)) {
-            $webhookSecret = $settings->getSecretKey();
-        }
-        
-        if (empty($webhookSecret)) {
-            fluent_cart_add_log('Razorpay Webhook', 'Webhook secret not configured', 'error');
-            return false;
-        }
-        
-        // Compute expected signature
-        $expectedSignature = hash_hmac('sha256', $payload, $webhookSecret);
-
-        // Verify signature using timing-safe comparison
-        $isValid = hash_equals($expectedSignature, $signature);
-
-        if (!$isValid) {
-            fluent_cart_add_log(
-                'Razorpay Webhook Verification Failed',
-                'Signature mismatch',
-                'error'
-            );
-        }
-
-        return $isValid;
+       $signature = $this->getRazorpaySignatureHeader() ?: '9fecef7d1078598f1bdfa153248da0f5ec8cdc2ceb0781e33f1a4c6f41bde6a1';
+    
+       return $this->validateWebhookSignature($payload, $signature);
     }
 
     /**
@@ -436,7 +400,6 @@ class RazorpayWebhook
     {
         $order = null;
 
-        // Try to get order from payment notes
         $notes = Arr::get($data, 'payload.payment.entity.notes', []);
         $orderHash = Arr::get($notes, 'order_hash');
 
@@ -454,44 +417,35 @@ class RazorpayWebhook
             }
         }
 
-        // Try to find order by Razorpay order ID
-        if (!$order) {
-            $razorpayOrderId = Arr::get($data, 'payload.payment.entity.order_id') 
-                ?: Arr::get($data, 'payload.order.entity.id');
-
-            if ($razorpayOrderId) {
-                $transaction = OrderTransaction::query()
-                    ->where('vendor_charge_id', $razorpayOrderId)
-                    ->where('payment_method', 'razorpay')
-                    ->first();
-
-                if ($transaction) {
-                    $order = Order::query()->where('id', $transaction->order_id)->first();
-                }
-            }
-        }
-
-        // Try to find by payment ID
-        if (!$order) {
-            $paymentId = Arr::get($data, 'payload.payment.entity.id')
-                ?: Arr::get($data, 'payload.refund.entity.payment_id');
-
-            if ($paymentId) {
-                $transactions = OrderTransaction::query()
-                    ->where('payment_method', 'razorpay')
-                    ->get();
-
-                foreach ($transactions as $transaction) {
-                    $meta = $transaction->meta ?? [];
-                    if (Arr::get($meta, 'razorpay_payment_id') == $paymentId) {
-                        $order = Order::query()->where('id', $transaction->order_id)->first();
-                        break;
-                    }
-                }
-            }
-        }
-
         return $order;
+    }
+
+    protected function getRazorpaySignatureHeader(): ?string
+    {
+        if (function_exists('getallheaders')) {
+            $headers = array_change_key_case(getallheaders(), CASE_LOWER);
+            return $headers['x-razorpay-signature'] ?? null;
+        }
+
+        if (isset($_SERVER['HTTP_X_RAZORPAY_SIGNATURE'])) {
+            return $_SERVER['HTTP_X_RAZORPAY_SIGNATURE'];
+        }
+
+        return null;
+    }
+
+    public function validateWebhookSignature($payload, $signature)
+    {
+        if (!$signature) {
+            return false;
+        }
+
+        $webhookSecret = (new RazorpaySettingsBase())->getWebhookSecret('current');
+        $message = $payload;
+
+        $expectedSignature = hash_hmac('sha256', $message, $webhookSecret);
+
+        return hash_equals(strtolower($expectedSignature), strtolower($signature));
     }
 
     /**

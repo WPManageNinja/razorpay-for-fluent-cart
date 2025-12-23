@@ -7,6 +7,7 @@ use FluentCart\App\Models\OrderTransaction;
 use FluentCart\App\Services\Payments\PaymentHelper;
 use FluentCart\Framework\Support\Arr;
 use RazorpayFluentCart\API\RazorpayAPI;
+use FluentCart\App\Helpers\CurrenciesHelper;
 
 class RazorpayRefund
 {
@@ -24,20 +25,26 @@ class RazorpayRefund
             );
         }
 
-        // Razorpay requires amount in smallest currency unit (paise for INR, cents for USD, etc.)
+        // Prepare refund data
         $refundData = [
-            'amount' => (int)$amount,
-            'speed' => 'normal', // normal or optimum
+            'amount' => (int)$amount
         ];
 
-        // Add note if provided
+        if (CurrenciesHelper::isZeroDecimal($transaction->currency)) {
+            $refundData['amount'] = (int)$amount / 100;
+        }
+
+        $refundSpeed = apply_filters('razorpay_fc/refund_speed', 'normal');
+        if (!empty($refundSpeed)) {
+            $refundData['speed'] = $refundSpeed;
+        }
+
         if (!empty($args['note'])) {
             $refundData['notes'] = [
                 'merchant_note' => $args['note']
             ];
         }
 
-        // Add reason as note if provided and no note exists
         if (empty($args['note']) && !empty($args['reason'])) {
             $reasonMap = [
                 'duplicate' => 'Duplicate payment',
@@ -48,6 +55,7 @@ class RazorpayRefund
                 'merchant_note' => $reasonMap[$args['reason']] ?? $args['reason']
             ];
         }
+
 
         $refund = RazorpayAPI::createRazorpayObject('payments/' . $razorpayPaymentId . '/refund', $refundData);
 
