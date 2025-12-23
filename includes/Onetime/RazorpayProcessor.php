@@ -14,9 +14,6 @@ class RazorpayProcessor
      */
     public function handleSinglePayment(PaymentInstance $paymentInstance, $paymentArgs = [])
     {
-        $order = $paymentInstance->order;
-        $transaction = $paymentInstance->transaction;
-        $fcCustomer = $paymentInstance->order->customer;
 
         $settings = new RazorpaySettingsBase();
         $checkoutType = $settings->get('checkout_type');
@@ -24,7 +21,8 @@ class RazorpayProcessor
         if ($checkoutType === 'modal') {
             return $this->handleModalPayment($paymentInstance, $paymentArgs);
         } else {
-            return $this->handleHostedPayment($paymentInstance, $paymentArgs);
+            // not handled yet, will come later
+            // return $this->handleHostedPayment($paymentInstance, $paymentArgs);
         }
     }
 
@@ -39,12 +37,12 @@ class RazorpayProcessor
 
         // Create Razorpay order first
         $orderData = [
-            'amount'   => $transaction->total, // Amount in paise
+            'amount'   => $transaction->total,
             'currency' => strtoupper($transaction->currency),
             'receipt'  => $transaction->uuid,
             'notes'    => [
-                'order_id'       => $order->id,
-                'transaction_id' => $transaction->uuid,
+                'fluent_cart_order_id'       => $order->id,
+                'transaction_hash' => $transaction->uuid,
                 'order_hash'     => $order->uuid,
                 'customer_name'  => $fcCustomer->first_name . ' ' . $fcCustomer->last_name,
             ]
@@ -65,7 +63,6 @@ class RazorpayProcessor
         ]);
 
         $settings = new RazorpaySettingsBase();
-        $keys = $settings->getApiKeys();
 
         // Prepare modal data
         $modalData = [
@@ -73,7 +70,7 @@ class RazorpayProcessor
             'currency'     => strtoupper($transaction->currency),
             'description'  => $this->getProductName($order),
             'order_id'     => $razorpayOrder['id'],
-            'key'          => $keys['api_key'],
+            'public_key'   => $settings->getPublicKey(),
             'name'         => get_bloginfo('name'),
             'prefill'      => [
                 'name'  => $fcCustomer->first_name . ' ' . $fcCustomer->last_name,
@@ -81,11 +78,8 @@ class RazorpayProcessor
                 'contact' => $fcCustomer->phone ?: ''
             ],
             'theme'        => [
-                'color' => '#3399cc'
+                'color' => apply_filters('razorpay_fc/modal_theme_color', '#3399cc')
             ],
-            'handler'      => function($response) {
-                // This will be handled in frontend JavaScript
-            }
         ];
 
         return [

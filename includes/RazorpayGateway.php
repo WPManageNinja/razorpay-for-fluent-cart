@@ -5,6 +5,7 @@ namespace RazorpayFluentCart;
 use FluentCart\Api\CurrencySettings;
 use FluentCart\App\Helpers\Helper;
 use FluentCart\App\Models\OrderTransaction;
+use FluentCart\App\Helpers\Status;
 use FluentCart\Framework\Support\Arr;
 use FluentCart\App\Services\Payments\PaymentInstance;
 use FluentCart\App\Services\PluginInstaller\PaymentAddonManager;
@@ -78,6 +79,15 @@ class RazorpayGateway extends AbstractPaymentGateway
             'cancel_url'  => $this->getCancelUrl(),
         ];
 
+        // check if the payment instance is a subscription
+        if ($paymentInstance->subscription) {
+            // not handled yet, will come later
+            wp_send_json([
+                'status'  => 'failed',
+                'message' => __('Subscription payments are not supported yet.', 'razorpay-for-fluent-cart')
+            ], 422);
+        }
+
         return (new Onetime\RazorpayProcessor())->handleSinglePayment($paymentInstance, $paymentArgs);
     }
 
@@ -90,7 +100,7 @@ class RazorpayGateway extends AbstractPaymentGateway
             'message'      => __('Order info retrieved!', 'razorpay-for-fluent-cart'),
             'data'         => [],
             'payment_args' => [
-                'key' => $this->settings->getPublicKey(),
+                'public_key' => $this->settings->getPublicKey('current'),
                 'checkout_type' => $this->settings->get('checkout_type')
             ],
         ], 200);
@@ -182,6 +192,15 @@ class RazorpayGateway extends AbstractPaymentGateway
         $transaction = Arr::get($data, 'transaction', null);
         if (!$transaction || !$transaction->vendor_charge_id) {
             return 'https://dashboard.razorpay.com/app/payments';
+        }
+
+        if ($transaction->status === Status::TRANSACTION_REFUNDED) {
+            $parentTransaction = OrderTransaction::query()
+                ->where('id', Arr::get($transaction->meta, 'parent_id'))
+                ->first();
+            if ($parentTransaction) {
+                return 'https://dashboard.razorpay.com/app/payments/' . $parentTransaction->vendor_charge_id;
+            }
         }
 
         return 'https://dashboard.razorpay.com/app/payments/' . $transaction->vendor_charge_id;

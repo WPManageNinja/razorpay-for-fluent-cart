@@ -34,7 +34,7 @@ class RazorpaySettingsBase extends BaseGatewaySettings
             'test_secret_key'  => '',
             'live_pub_key'     => '',
             'live_secret_key'  => '',
-            'payment_mode'    => 'test',
+            'payment_mode'    => 'live',
             'checkout_type'    => 'modal',
             'notification'    => [],
         ];
@@ -57,14 +57,6 @@ class RazorpaySettingsBase extends BaseGatewaySettings
 
     public function getMode()
     {
-        // First check if Razorpay has its own payment_mode setting
-        // This allows Razorpay to override FluentCart's store mode if needed
-        $razorpayMode = $this->get('payment_mode');
-        
-        if (!empty($razorpayMode) && ($razorpayMode === 'test' || $razorpayMode === 'live')) {
-            return $razorpayMode;
-        }
-        
         // Fall back to FluentCart store mode
         return (new StoreSettings)->get('order_mode');
     }
