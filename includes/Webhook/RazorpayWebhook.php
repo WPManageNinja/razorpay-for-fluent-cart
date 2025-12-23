@@ -45,9 +45,12 @@ class RazorpayWebhook
         }
 
 
-        if (!$this->verifySignature($payload)) {
-            http_response_code(401);
-            exit('Invalid signature / Verification failed');
+        $byPassSignatureVerification = apply_filters('razorpay_fc/by_pass_signature_verification', false);
+        if (!$byPassSignatureVerification) {
+            if (!$this->verifySignature($payload)) {
+                http_response_code(401);
+                exit('Invalid signature / Verification failed');
+            }
         }
 
         $event = Arr::get($data, 'event');
@@ -90,9 +93,6 @@ class RazorpayWebhook
         exit('Webhook received but not handled');
     }
 
-    /**
-     * Get webhook payload from request
-     */
     private function getWebhookPayload()
     {
         $input = file_get_contents('php://input');
@@ -109,20 +109,13 @@ class RazorpayWebhook
         return $input;
     }
 
-    /**
-     * Verify webhook signature
-     * Razorpay uses HMAC SHA256 signature verification
-     */
     private function verifySignature($payload)
     {
-       $signature = $this->getRazorpaySignatureHeader() ?: '16b02a7d95b0d5595effe2697cd25b258f10c433fc4f928f3a60ede67ae07bc1';
+       $signature = $this->getRazorpaySignatureHeader();
     
        return $this->validateWebhookSignature($payload, $signature);
     }
 
-    /**
-     * Handle payment.captured webhook event
-     */
     public function handlePaymentCaptured($data)
     {
         $razorpayPayment = Arr::get($data, 'payload.payment.entity');
@@ -156,9 +149,7 @@ class RazorpayWebhook
         $this->sendResponse(200, 'Payment captured successfully');
     }
 
-    /**
-     * Handle payment.authorized webhook event
-     */
+ 
     public function handlePaymentAuthorized($data)
     {
         $razorpayPayment = Arr::get($data, 'payload.payment.entity');
@@ -185,7 +176,7 @@ class RazorpayWebhook
         ];
 
         // Auto-capture the payment
-        $shouldAutoCapture = apply_filters('razorpay_fc/should_auto_capture_payment', false);
+        $shouldAutoCapture = apply_filters('razorpay_fc/should_auto_capture_payment', true);
         if ($shouldAutoCapture) {
             $razorpayPayment = RazorpayAPI::createRazorpayObject('payments/' . $paymentId . '/capture', $captureData);
 
@@ -197,9 +188,11 @@ class RazorpayWebhook
 
             }
         } else {
-            $isAuthorizationIsSuccess = apply_filters('razorpay_fc/is_authorization_is_success', false, $razorpayPayment);
+            $isAuthorizationIsASuccessState = apply_filters('razorpay_fc/is_authorization_is_a_success_state', true, [
+                'razorpay_payment' => $razorpayPayment,
+            ]);
 
-            if ($isAuthorizationIsSuccess) {
+            if ($isAuthorizationIsASuccessState) {
                 // Process the captured payment
                 (new RazorpayConfirmations())->confirmPaymentSuccessByCharge($transaction, $razorpayPayment);
             } else {
@@ -216,9 +209,7 @@ class RazorpayWebhook
         $this->sendResponse(200, 'Payment authorized and captured');
     }
 
-    /**
-     * Handle payment.failed webhook event
-     */
+  
     public function handlePaymentFailed($data)
     {
         $razorpayPayment = Arr::get($data, 'payload.payment.entity');
@@ -257,17 +248,13 @@ class RazorpayWebhook
         $this->sendResponse(200, 'Payment failure processed');
     }
 
-    /**
-     * Handle refund.created or refund.processed webhook event
-     */
+
     public function handleRefundCreated($data)
     {
         $this->handleRefundProcessed($data);
     }
 
-    /**
-     * Handle refund.processed webhook event
-     */
+
     public function handleRefundProcessed($data)
     {
         $refund = Arr::get($data, 'payload.refund.entity');
@@ -351,9 +338,6 @@ class RazorpayWebhook
         $this->sendResponse(200, 'Refund processed successfully');
     }
 
-    /**
-     * Find transaction by Razorpay payment data
-     */
     private function findTransactionByPayment($razorpayPayment)
     {
         $orderId = Arr::get($razorpayPayment, 'order_id');
@@ -397,9 +381,6 @@ class RazorpayWebhook
         return null;
     }
 
-    /**
-     * Get FluentCart order from webhook data
-     */
     public function getFluentCartOrder($data)
     {
         $order = null;
@@ -452,9 +433,7 @@ class RazorpayWebhook
         return hash_equals(strtolower($expectedSignature), strtolower($signature));
     }
 
-    /**
-     * Send JSON response and exit
-     */
+
     protected function sendResponse($statusCode = 200, $message = 'Success')
     {
         http_response_code($statusCode);
