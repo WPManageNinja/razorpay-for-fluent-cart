@@ -20,14 +20,15 @@ class RazorpayGateway extends AbstractPaymentGateway
     public array $supportedFeatures = [
         'payment',
         'refund',
-        'webhook'
+        'webhook',
+        'subscriptions'
     ];
 
     public function __construct()
     {
         parent::__construct(
             new Settings\RazorpaySettingsBase(), 
-            null // No subscription support
+            new Subscriptions\RazorpaySubscriptions()
         );
     }
 
@@ -81,11 +82,7 @@ class RazorpayGateway extends AbstractPaymentGateway
 
         // check if the payment instance is a subscription
         if ($paymentInstance->subscription) {
-            // not handled yet, will come later
-            wp_send_json([
-                'status'  => 'failed',
-                'message' => __('Subscription payments are not supported yet.', 'razorpay-for-fluent-cart')
-            ], 422);
+            return (new Subscriptions\RazorpaySubscriptions())->handleSubscription($paymentInstance, $paymentArgs);
         }
 
         return (new Onetime\RazorpayProcessor())->handleSinglePayment($paymentInstance, $paymentArgs);
@@ -188,6 +185,16 @@ class RazorpayGateway extends AbstractPaymentGateway
         }
 
         return 'https://dashboard.razorpay.com/app/payments/' . $transaction->vendor_charge_id;
+    }
+
+    public function getSubscriptionUrl($url, $data): string
+    {
+        $subscription = Arr::get($data, 'subscription', null);
+        if (!$subscription || !$subscription->vendor_subscription_id) {
+            return 'https://dashboard.razorpay.com/app/subscriptions';
+        }
+
+        return 'https://dashboard.razorpay.com/app/subscriptions/' . $subscription->vendor_subscription_id;
     }
 
     public function processRefund($transaction, $amount, $args)

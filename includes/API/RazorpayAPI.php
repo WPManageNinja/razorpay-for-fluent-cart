@@ -41,7 +41,7 @@ class RazorpayAPI
         }
 
         // Validate HTTP method
-        $allowedMethods = ['GET', 'POST', 'PUT', 'DELETE'];
+        $allowedMethods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
         if (!in_array(strtoupper($method), $allowedMethods, true)) {
             return new \WP_Error('invalid_method', 'Invalid HTTP method');
         }
@@ -98,6 +98,11 @@ class RazorpayAPI
         
         $url = self::$baseUrl . $endpoint;
         
+        // Handle GET parameters
+        if ($method === 'GET' && !empty($data)) {
+            $url = add_query_arg($data, $url);
+        }
+        
         $args = [
             'method'  => strtoupper($method),
             'headers' => [
@@ -109,7 +114,7 @@ class RazorpayAPI
             'sslverify' => true, // Always verify SSL
         ];
 
-        if ($method === 'POST' && !empty($data)) {
+        if (in_array($method, ['POST', 'PUT', 'PATCH']) && !empty($data)) {
             $args['body'] = wp_json_encode($data);
         }
 
@@ -156,7 +161,15 @@ class RazorpayAPI
     }
 
     /**
-     * Delete/Update Razorpay object (for POST requests used for deletion)
+     * Update Razorpay object (for PATCH requests)
+     */
+    public static function updateRazorpayObject($endpoint, $data = [])
+    {
+        return self::request($endpoint, 'PATCH', $data);
+    }
+
+    /**
+     * Delete/Cancel Razorpay object (for POST requests used for deletion/cancellation)
      */
     public static function deleteRazorpayObject($endpoint, $data = [])
     {

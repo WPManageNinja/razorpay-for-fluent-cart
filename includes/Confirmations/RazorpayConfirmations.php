@@ -6,9 +6,11 @@ use FluentCart\App\Helpers\Status;
 use FluentCart\App\Helpers\StatusHelper;
 use FluentCart\App\Models\Order;
 use FluentCart\App\Models\OrderTransaction;
+use FluentCart\App\Models\Subscription;
 use FluentCart\Framework\Support\Arr;
 use RazorpayFluentCart\API\RazorpayAPI;
 use RazorpayFluentCart\RazorpayHelper;
+use RazorpayFluentCart\Subscriptions\RazorpaySubscriptions;
 use FluentCart\App\Helpers\CurrenciesHelper;
 
 class RazorpayConfirmations
@@ -22,6 +24,7 @@ class RazorpayConfirmations
     public function confirmModalPayment()
     {
         $transactionHash = sanitize_text_field(Arr::get($_REQUEST, 'transaction_hash'));
+        $intent = sanitize_text_field(Arr::get($_REQUEST, 'intent', 'payment'));
         
         if (!$transactionHash) {
             wp_send_json_error([
@@ -49,7 +52,6 @@ class RazorpayConfirmations
 
         $vendorPayment = RazorpayAPI::getRazorpayObject('payments/' . $paymentId);
 
-
         if (is_wp_error($vendorPayment)) {
             wp_send_json_error([
                 'message' => $vendorPayment->get_error_message()
@@ -59,6 +61,13 @@ class RazorpayConfirmations
         $status = Arr::get($vendorPayment, 'status');
         $captured = Arr::get($vendorPayment, 'captured', false);
         
+        // Handle subscription authentication payment
+        if ($intent === 'subscription') {
+            $this->handleSubscriptionAuthentication($transaction, $vendorPayment, $paymentId);
+            return;
+        }
+        
+        // Handle regular one-time payment
         if ($status === 'authorized' && !$captured) {
             $captureAmount = Arr::get($vendorPayment, 'amount');
             $currency = Arr::get($vendorPayment, 'currency', 'INR');
@@ -89,10 +98,78 @@ class RazorpayConfirmations
             ]);
         }
 
-
         wp_send_json_error([
             'message' => __('Payment verification failed', 'razorpay-for-fluent-cart')
         ], 400);
+    }
+
+    /**
+     * Handle subscription authentication payment
+     * This is the initial payment that authenticates the card for future charges
+     */
+    private function handleSubscriptionAuthentication($transaction, $vendorPayment, $paymentId)
+    {
+        $status = Arr::get($vendorPayment, 'status');
+        
+        // For subscriptions, we need the payment to be successful (authorized or captured)
+        if ($status !== 'authorized' && $status !== 'captured') {
+            wp_send_json_error([
+                'message' => __('Payment authentication failed', 'razorpay-for-fluent-cart')
+            ], 400);
+        }
+
+        // Confirm the authentication transaction
+        $this->confirmPaymentSuccessByCharge($transaction, $vendorPayment);
+
+        // Get the subscription
+        $order = Order::query()->where('id', $transaction->order_id)->first();
+        $subscription = Subscription::query()
+            ->where('parent_order_id', $order->id)
+            ->where('current_payment_method', 'razorpay')
+            ->first();
+
+        if (!$subscription) {
+            wp_send_json_error([
+                'message' => __('Subscription not found', 'razorpay-for-fluent-cart')
+            ], 400);
+        }
+
+        // Prepare billing info from payment
+        $billingInfo = [
+            'payment_method_type' => Arr::get($vendorPayment, 'method'),
+        ];
+
+        if ($card = Arr::get($vendorPayment, 'card')) {
+            $billingInfo['card_brand'] = Arr::get($card, 'network');
+            $billingInfo['card_last_4'] = Arr::get($card, 'last4');
+            $billingInfo['card_type'] = Arr::get($card, 'type');
+        }
+
+        // Create subscription on Razorpay
+        $result = (new RazorpaySubscriptions())->createSubscriptionOnRazorpay($subscription, [
+            'billingInfo' => $billingInfo
+        ]);
+
+        if (empty($result)) {
+            wp_send_json_error([
+                'message' => __('Failed to create subscription on Razorpay', 'razorpay-for-fluent-cart')
+            ], 400);
+        }
+
+        fluent_cart_add_log(
+            __('Razorpay Subscription Authentication Complete', 'razorpay-for-fluent-cart'),
+            sprintf('Payment ID: %s, Subscription ID: %s', $paymentId, $subscription->vendor_subscription_id),
+            'info',
+            [
+                'module_name' => 'order',
+                'module_id' => $order->id,
+            ]
+        );
+
+        wp_send_json_success([
+            'message' => __('Subscription activated successfully', 'razorpay-for-fluent-cart'),
+            'redirect_url' => $transaction->getReceiptPageUrl()
+        ]);
     }
 
 

@@ -152,6 +152,7 @@ class RazorpayCheckout {
     async handleModalCheckout(remoteResponse) {
         const modalData = remoteResponse?.payment_args?.modal_data;
         const transactionHash = remoteResponse?.payment_args?.transaction_hash;
+        const intent = remoteResponse?.data?.intent || 'payment';
 
         if (!modalData || !modalData.order_id) {
             this.handleRazorpayError(new Error('Invalid modal data'));
@@ -177,7 +178,7 @@ class RazorpayCheckout {
                 prefill: modalData.prefill,
                 theme: modalData.theme,
                 handler: (response) => {
-                    this.handlePaymentSuccess(response, transactionHash);
+                    this.handlePaymentSuccess(response, transactionHash, intent);
                 },
                 modal: {
                     escape: true,
@@ -186,6 +187,11 @@ class RazorpayCheckout {
                     }
                 }
             };
+
+            // For subscriptions, add recurring flag
+            if (intent === 'subscription') {
+                options.recurring = '1';
+            }
 
             const rzp = new Razorpay(options);
             rzp.open();
@@ -231,7 +237,7 @@ class RazorpayCheckout {
         });
     }
 
-    handlePaymentSuccess(response, transactionHash) {
+    handlePaymentSuccess(response, transactionHash, intent = 'payment') {
         const paymentId = response.razorpay_payment_id;
         
         if (!paymentId) {
@@ -239,14 +245,19 @@ class RazorpayCheckout {
             return;
         }
 
-        this.paymentLoader?.changeLoaderStatus(this.$t('Verifying payment...'));
+        const loadingMessage = intent === 'subscription' 
+            ? this.$t('Setting up subscription...') 
+            : this.$t('Verifying payment...');
+        
+        this.paymentLoader?.changeLoaderStatus(loadingMessage);
 
         const params = new URLSearchParams({
             action: 'fluent_cart_razorpay_confirm_payment',
             razorpay_payment_id: paymentId,
             razorpay_order_id: response.razorpay_order_id || '',
             razorpay_signature: response.razorpay_signature || '',
-            transaction_hash: transactionHash
+            transaction_hash: transactionHash,
+            intent: intent
         });
 
         const that = this;
@@ -262,7 +273,12 @@ class RazorpayCheckout {
                     if (res?.data?.redirect_url || res?.redirect_url) {
                         const redirectUrl = res?.data?.redirect_url || res?.redirect_url;
                         that.paymentLoader.triggerPaymentCompleteEvent(res);
-                        that.paymentLoader?.changeLoaderStatus(that.$t('Payment successful! Redirecting...'));
+                        
+                        const successMessage = intent === 'subscription'
+                            ? that.$t('Subscription activated! Redirecting...')
+                            : that.$t('Payment successful! Redirecting...');
+                        
+                        that.paymentLoader?.changeLoaderStatus(successMessage);
                         
                         window.location.href = redirectUrl;
                     } else {
