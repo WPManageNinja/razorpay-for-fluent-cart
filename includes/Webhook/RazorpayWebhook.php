@@ -12,6 +12,7 @@ use RazorpayFluentCart\API\RazorpayAPI;
 use RazorpayFluentCart\Settings\RazorpaySettingsBase;
 use RazorpayFluentCart\Confirmations\RazorpayConfirmations;
 use RazorpayFluentCart\Refund\RazorpayRefund;
+use FluentCart\App\Helpers\CurrenciesHelper;
 
 class RazorpayWebhook
 {
@@ -21,7 +22,6 @@ class RazorpayWebhook
         add_action('fluent_cart/payments/razorpay/webhook_payment_captured', [$this, 'handlePaymentCaptured'], 10, 1);
         add_action('fluent_cart/payments/razorpay/webhook_payment_authorized', [$this, 'handlePaymentAuthorized'], 10, 1);
         add_action('fluent_cart/payments/razorpay/webhook_payment_failed', [$this, 'handlePaymentFailed'], 10, 1);
-        add_action('fluent_cart/payments/razorpay/webhook_refund_created', [$this, 'handleRefundCreated'], 10, 1);
         add_action('fluent_cart/payments/razorpay/webhook_refund_processed', [$this, 'handleRefundProcessed'], 10, 1);
     }
 
@@ -248,13 +248,6 @@ class RazorpayWebhook
         $this->sendResponse(200, 'Payment failure processed');
     }
 
-
-    public function handleRefundCreated($data)
-    {
-        $this->handleRefundProcessed($data);
-    }
-
-
     public function handleRefundProcessed($data)
     {
         $refund = Arr::get($data, 'payload.refund.entity');
@@ -266,19 +259,19 @@ class RazorpayWebhook
         $currency = Arr::get($refund, 'currency', 'INR');
         $status = Arr::get($refund, 'status');
 
+        if (CurrenciesHelper::isZeroDecimal($currency)) {
+            $amount = $amount * 100;
+        }
+
         if (!$refundId || !$paymentId) {
             $this->sendResponse(400, 'Refund or Payment ID not found');
         }
 
         // Find parent transaction by payment ID
         $parentTransaction = OrderTransaction::query()
-            ->where('payment_method', 'razorpay')
-            ->get()
-            ->first(function($transaction) use ($paymentId) {
-                $meta = $transaction->meta ?? [];
-                return Arr::get($meta, 'razorpay_payment_id') == $paymentId 
-                    || $transaction->vendor_charge_id == $paymentId;
-            });
+            ->where('vendor_charge_id', $paymentId)
+            ->first();
+           
 
         if (!$parentTransaction) {
             $this->sendResponse(404, 'Parent transaction not found for payment: ' . $paymentId);
@@ -321,7 +314,6 @@ class RazorpayWebhook
         $currentCreatedRefund = RazorpayRefund::createOrUpdateIpnRefund($refundData, $parentTransaction);
 
         if ($currentCreatedRefund && $currentCreatedRefund->wasRecentlyCreated) {
-            // Dispatch refund event
             (new OrderRefund($order, $currentCreatedRefund))->dispatch();
         }
 

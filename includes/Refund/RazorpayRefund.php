@@ -34,7 +34,12 @@ class RazorpayRefund
             $refundData['amount'] = (int)$amount / 100;
         }
 
-        $refundSpeed = apply_filters('razorpay_fc/refund_speed', 'normal');
+        $refundSpeed = apply_filters('razorpay_fc/refund_speed', 'normal', [
+            'transaction' => $transaction,
+            'amount_in_cents' => $amount,
+            'args' => $args
+        ]);
+
         if (!empty($refundSpeed)) {
             $refundData['speed'] = $refundSpeed;
         }
@@ -55,7 +60,6 @@ class RazorpayRefund
                 'merchant_note' => $reasonMap[$args['reason']] ?? $args['reason']
             ];
         }
-
 
         $refund = RazorpayAPI::createRazorpayObject('payments/' . $razorpayPaymentId . '/refund', $refundData);
 
@@ -106,7 +110,7 @@ class RazorpayRefund
     public static function createOrUpdateIpnRefund($refundData, $parentTransaction)
     {
         $allRefunds = OrderTransaction::query()
-            ->where('order_id', $refundData['order_id'])
+            ->where('vendor_charge_id', $refundData['vendor_charge_id'])
             ->where('transaction_type', Status::TRANSACTION_TYPE_REFUND)
             ->orderBy('id', 'DESC')
             ->get();
@@ -123,7 +127,6 @@ class RazorpayRefund
             return $createdRefund instanceof OrderTransaction ? $createdRefund : null;
         }
 
-        $currentRefundRazorpayId = Arr::get($refundData, 'vendor_charge_id', '');
         $existingLocalRefund = null;
 
         foreach ($allRefunds as $refund) {
@@ -133,17 +136,16 @@ class RazorpayRefund
                     $refund->fill($refundData);
                     $refund->save();
                 }
-                // This refund already exists
+
                 return $refund;
             }
 
             // Check for local refund without vendor charge id
             if (!$refund->vendor_charge_id) {
-                $refundRazorpayId = Arr::get($refund->meta, 'razorpay_refund_id', '');
-                $isRefundMatched = $refundRazorpayId == $currentRefundRazorpayId;
+                $refundedAmount = $refund->total;
 
                 // This is a local refund without vendor charge id, we will update it
-                if ($refund->total == $refundData['total'] && $isRefundMatched) {
+                if ($refundedAmount == $refundData['total']) {
                     $existingLocalRefund = $refund;
                 }
             }

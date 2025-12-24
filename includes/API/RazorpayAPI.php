@@ -36,7 +36,6 @@ class RazorpayAPI
      */
     private static function request($endpoint, $method = 'GET', $data = [])
     {
-        // Input validation
         if (empty($endpoint) || !is_string($endpoint)) {
             return new \WP_Error('invalid_endpoint', 'Invalid API endpoint provided');
         }
@@ -66,7 +65,6 @@ class RazorpayAPI
             );
         }
 
-        // Trim any whitespace from keys
         $apiKey = trim($keys['api_key']);
         $apiSecret = trim($keys['api_secret']);
         
@@ -87,7 +85,6 @@ class RazorpayAPI
             );
         }
         
-        // Validate key format (Razorpay keys typically start with rzp_)
         if (strpos($apiKey, 'rzp_') !== 0) {
             return new \WP_Error(
                 'razorpay_auth_error',
@@ -127,7 +124,6 @@ class RazorpayAPI
 
         $statusCode = wp_remote_retrieve_response_code($response);
         
-        // Check for error in response
         if ($statusCode >= 400 || !empty($responseData['error'])) {
             $message = Arr::get($responseData, 'error.description');
             if (!$message) {
