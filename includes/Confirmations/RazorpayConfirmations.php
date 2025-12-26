@@ -121,7 +121,7 @@ class RazorpayConfirmations
 
         $this->confirmPaymentSuccessByCharge($transaction, $vendorPayment);
 
-        $order = Order::query()->where('id', operator: $transaction->order_id)->first();
+        $order = Order::query()->where('id', $transaction->order_id)->first();
         $subscription = Subscription::query()
             ->where('parent_order_id', $order->id)
             ->where('current_payment_method', 'razorpay')
