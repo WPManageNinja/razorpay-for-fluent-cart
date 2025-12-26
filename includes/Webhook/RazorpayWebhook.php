@@ -527,47 +527,7 @@ class RazorpayWebhook
             $this->sendResponse(404, 'Subscription not found');
         }
 
-        // Check if transaction already exists
-        $existingTransaction = OrderTransaction::query()
-            ->where('vendor_charge_id', $paymentId)
-            ->first();
-
-        if ($existingTransaction) {
-            $this->sendResponse(200, 'Payment already recorded');
-        }
-
-        // Get subscription update data
-        $subscriptionUpdateData = RazorpayHelper::getSubscriptionUpdateData($razorpaySubscription, $subscriptionModel);
-
-        // Create transaction for renewal payment
-        $order = Order::query()->where('id', $subscriptionModel->parent_order_id)->first();
-        $transactionData = [
-            'order_id' => $order->id,
-            'amount' => Arr::get($razorpayPayment, 'amount', 0),
-            'currency' => Arr::get($razorpayPayment, 'currency', 'INR'),
-            'vendor_charge_id' => $paymentId,
-            'status' => Status::TRANSACTION_SUCCEEDED,
-            'payment_method' => 'razorpay',
-            'transaction_type' => Status::TRANSACTION_TYPE_CHARGE,
-            'payment_method_type' => Arr::get($razorpayPayment, 'method'),
-            'card_brand' => Arr::get($razorpayPayment, 'card.network'),
-            'card_last_4' => Arr::get($razorpayPayment, 'card.last4'),
-            'created_at' => Arr::get($razorpayPayment, 'created_at')
-                ? DateTime::anyTimeToGmt(Arr::get($razorpayPayment, 'created_at'))->format('Y-m-d H:i:s')
-                : DateTime::gmtNow()->format('Y-m-d H:i:s'),
-        ];
-
-        SubscriptionService::recordRenewalPayment($transactionData, $subscriptionModel, $subscriptionUpdateData);
-
-        fluent_cart_add_log(
-            __('Razorpay Subscription Payment Successful', 'razorpay-for-fluent-cart'),
-            'Payment ID: ' . $paymentId . ', Subscription ID: ' . $subscriptionId,
-            'info',
-            [
-                'module_name' => 'subscription',
-                'module_id' => $subscriptionModel->id,
-            ]
-        );
+        $subscriptionModel->reSyncFromRemote();
 
         $this->sendResponse(200, 'Subscription payment recorded');
     }

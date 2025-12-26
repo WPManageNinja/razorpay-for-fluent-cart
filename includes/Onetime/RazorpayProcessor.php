@@ -17,7 +17,7 @@ class RazorpayProcessor
     {
 
         $settings = new RazorpaySettingsBase();
-        $checkoutType = $settings->get('checkout_type');
+        $checkoutType = $settings->get('checkout_type') ?? 'modal';
 
         if ($checkoutType === 'modal') {
             return $this->handleModalPayment($paymentInstance, $paymentArgs);
@@ -104,74 +104,74 @@ class RazorpayProcessor
     /**
      * Handle hosted checkout
      */
-    private function handleHostedPayment(PaymentInstance $paymentInstance, $paymentArgs = [])
-    {
-        $order = $paymentInstance->order;
-        $transaction = $paymentInstance->transaction;
-        $fcCustomer = $paymentInstance->order->customer;
-        $settings = new RazorpaySettingsBase();
+    // private function handleHostedPayment(PaymentInstance $paymentInstance, $paymentArgs = [])
+    // {
+    //     $order = $paymentInstance->order;
+    //     $transaction = $paymentInstance->transaction;
+    //     $fcCustomer = $paymentInstance->order->customer;
+    //     $settings = new RazorpaySettingsBase();
 
-        $listenerUrl = add_query_arg([
-            'fluent_cart_payment' => $transaction->uuid,
-            'payment_method'      => 'razorpay',
-        ], Arr::get($paymentArgs, 'success_url'));
+    //     $listenerUrl = add_query_arg([
+    //         'fluent_cart_payment' => $transaction->uuid,
+    //         'payment_method'      => 'razorpay',
+    //     ], Arr::get($paymentArgs, 'success_url'));
 
-        $paymentLinkData = [
-            'amount'         => $transaction->total,
-            'currency'       => strtoupper($transaction->currency),
-            'description'    => $this->getProductName($order),
-            'reference_id'   => $transaction->uuid,
-            'customer'       => [
-                'name'    => $fcCustomer->first_name . ' ' . $fcCustomer->last_name,
-                'email'   => $fcCustomer->email,
-                'contact' => $fcCustomer->phone ?: ''
-            ],
-            'callback_url'   => $listenerUrl,
-            'callback_method' => 'get',
-            'notes'          => [
-                'order_id'       => $order->id,
-                'transaction_id' => $transaction->uuid,
-                'order_hash'     => $order->uuid,
-                'customer_name'  => $fcCustomer->first_name . ' ' . $fcCustomer->last_name,
-            ],
-            'notify'         => [
-                'email' => in_array('email', $settings->get('notification') ?: []),
-                'sms'   => in_array('sms', $settings->get('notification') ?: [])
-            ]
-        ];
+    //     $paymentLinkData = [
+    //         'amount'         => $transaction->total,
+    //         'currency'       => strtoupper($transaction->currency),
+    //         'description'    => $this->getProductName($order),
+    //         'reference_id'   => $transaction->uuid,
+    //         'customer'       => [
+    //             'name'    => $fcCustomer->first_name . ' ' . $fcCustomer->last_name,
+    //             'email'   => $fcCustomer->email,
+    //             'contact' => $fcCustomer->phone ?: ''
+    //         ],
+    //         'callback_url'   => $listenerUrl,
+    //         'callback_method' => 'get',
+    //         'notes'          => [
+    //             'order_id'       => $order->id,
+    //             'transaction_id' => $transaction->uuid,
+    //             'order_hash'     => $order->uuid,
+    //             'customer_name'  => $fcCustomer->first_name . ' ' . $fcCustomer->last_name,
+    //         ],
+    //         'notify'         => [
+    //             'email' => in_array('email', $settings->get('notification') ?: []),
+    //             'sms'   => in_array('sms', $settings->get('notification') ?: [])
+    //         ]
+    //     ];
 
-        // Apply filters
-        $paymentLinkData = apply_filters('razorpay_fc/payment_link_args', $paymentLinkData, [
-            'order'       => $order,
-            'transaction' => $transaction
-        ]);
+    //     // Apply filters
+    //     $paymentLinkData = apply_filters('razorpay_fc/payment_link_args', $paymentLinkData, [
+    //         'order'       => $order,
+    //         'transaction' => $transaction
+    //     ]);
 
-        $paymentLink = RazorpayAPI::createRazorpayObject('payment_links', $paymentLinkData);
+    //     $paymentLink = RazorpayAPI::createRazorpayObject('payment_links', $paymentLinkData);
 
-        if (is_wp_error($paymentLink)) {
-            return $paymentLink;
-        }
+    //     if (is_wp_error($paymentLink)) {
+    //         return $paymentLink;
+    //     }
 
-        $redirectUrl = Arr::get($paymentLink, 'short_url');
+    //     $redirectUrl = Arr::get($paymentLink, 'short_url');
 
-        if (!$redirectUrl) {
-            return new \WP_Error(
-                'razorpay_url_error',
-                __('Unable to get payment URL from Razorpay', 'razorpay-for-fluent-cart')
-            );
-        }
+    //     if (!$redirectUrl) {
+    //         return new \WP_Error(
+    //             'razorpay_url_error',
+    //             __('Unable to get payment URL from Razorpay', 'razorpay-for-fluent-cart')
+    //         );
+    //     }
 
-        return [
-            'status'       => 'success',
-            'nextAction'   => 'razorpay',
-            'actionName'   => 'redirect',
-            'message'      => __('Redirecting to Razorpay payment page...', 'razorpay-for-fluent-cart'),
-            'payment_args' => array_merge($paymentArgs, [
-                'checkout_url'  => $redirectUrl,
-                'checkout_type' => 'hosted'
-            ])
-        ];
-    }
+    //     return [
+    //         'status'       => 'success',
+    //         'nextAction'   => 'razorpay',
+    //         'actionName'   => 'redirect',
+    //         'message'      => __('Redirecting to Razorpay payment page...', 'razorpay-for-fluent-cart'),
+    //         'payment_args' => array_merge($paymentArgs, [
+    //             'checkout_url'  => $redirectUrl,
+    //             'checkout_type' => 'hosted'
+    //         ])
+    //     ];
+    // }
 
     /**
      * Get product name from order items

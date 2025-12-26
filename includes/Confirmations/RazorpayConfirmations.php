@@ -61,13 +61,11 @@ class RazorpayConfirmations
         $status = Arr::get($vendorPayment, 'status');
         $captured = Arr::get($vendorPayment, 'captured', false);
         
-        // Handle subscription authentication payment
         if ($intent === 'subscription') {
             $this->handleSubscriptionAuthentication($transaction, $vendorPayment, $paymentId);
             return;
         }
         
-        // Handle regular one-time payment
         if ($status === 'authorized' && !$captured) {
             $captureAmount = Arr::get($vendorPayment, 'amount');
             $currency = Arr::get($vendorPayment, 'currency', 'INR');
@@ -115,18 +113,15 @@ class RazorpayConfirmations
     {
         $status = Arr::get($vendorPayment, 'status');
         
-        // For subscriptions, we need the payment to be successful (authorized or captured)
         if ($status !== 'authorized' && $status !== 'captured' && $status !== 'paid') {
             wp_send_json_error([
                 'message' => __('Payment authentication failed', 'razorpay-for-fluent-cart')
             ], 400);
         }
 
-        // Confirm the authentication transaction
         $this->confirmPaymentSuccessByCharge($transaction, $vendorPayment);
 
-        // Get the subscription
-        $order = Order::query()->where('id', $transaction->order_id)->first();
+        $order = Order::query()->where('id', operator: $transaction->order_id)->first();
         $subscription = Subscription::query()
             ->where('parent_order_id', $order->id)
             ->where('current_payment_method', 'razorpay')
@@ -138,7 +133,6 @@ class RazorpayConfirmations
             ], 400);
         }
 
-        // Update subscription status after authentication
         (new RazorpaySubscriptions())->updateSubscriptionAfterAuth($subscription, $vendorPayment);
 
         fluent_cart_add_log(
