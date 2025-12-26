@@ -102,7 +102,7 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
             ],
         ];
 
-        // Return response for authentication
+        // Return response for authentication (modal checkout only)
         return [
             'status' => 'success',
             'nextAction' => 'razorpay',
@@ -116,9 +116,8 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
             'data' => [
                 'razorpay_subscription' => $razorpaySubscription,
                 'subscription_id' => $subscriptionId,
-                'short_url' => $shortUrl,
                 'intent' => 'subscription',
-                'transaction_hash' => $transaction->uuid,
+                'transaction_hash' => $transaction->uuid
             ]
         ];
     }
@@ -247,10 +246,16 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
         // Handle upfront amount (setup fees, deposits, etc.)
         $upfrontAmount = (int)$subscription->signup_fee;
         if ($upfrontAmount > 0) {
+
+            if ($subscription->trial_days > 0 && Arr::get($subscription, 'is_trial_days_simulated', 'no') == 'yes') {
+                $name = __('Adjusted Amount', 'razorpay-for-fluent-cart');
+            } else {
+                $name = __('Setup Fee', 'razorpay-for-fluent-cart');
+            }
             $subscriptionData['addons'] = [
                 [
                     'item' => [
-                        'name' => __('Setup Fee', 'razorpay-for-fluent-cart'),
+                        'name' => $name,
                         'amount' => $upfrontAmount,
                         'currency' => strtoupper($transaction->currency)
                     ]
