@@ -153,9 +153,18 @@ class RazorpayCheckout {
         const modalData = remoteResponse?.payment_args?.modal_data;
         const transactionHash = remoteResponse?.payment_args?.transaction_hash;
         const intent = remoteResponse?.data?.intent || 'payment';
+        const subscriptionData = remoteResponse?.data?.razorpay_subscription;
 
-        if (!modalData || !modalData.order_id) {
+        // For subscriptions, we use subscription_id instead of order_id
+        const isSubscription = intent === 'subscription' && subscriptionData;
+
+        if (!isSubscription && (!modalData || !modalData.order_id)) {
             this.handleRazorpayError(new Error('Invalid modal data'));
+            return;
+        }
+
+        if (isSubscription && !remoteResponse?.data?.subscription_id) {
+            this.handleRazorpayError(new Error('Subscription ID not found'));
             return;
         }
 
@@ -169,14 +178,13 @@ class RazorpayCheckout {
 
         try {
             const options = {
-                key: modalData.api_key,
-                amount: modalData.amount,
-                currency: modalData.currency,
-                name: modalData.name,
-                description: modalData.description,
-                order_id: modalData.order_id,
-                prefill: modalData.prefill,
-                theme: modalData.theme,
+                key: modalData?.api_key || this.#apiKey,
+                name: modalData?.name || 'Subscription',
+                description: modalData?.description || 'Subscription Payment',
+                prefill: modalData?.prefill || {},
+                theme: modalData?.theme || {
+                    color: '#3399cc'
+                },
                 handler: (response) => {
                     this.handlePaymentSuccess(response, transactionHash, intent);
                 },
@@ -188,9 +196,15 @@ class RazorpayCheckout {
                 }
             };
 
-            // For subscriptions, add recurring flag
-            if (intent === 'subscription') {
+            // For subscriptions, use subscription_id instead of order_id
+            if (isSubscription) {
+                options.subscription_id = remoteResponse.data.subscription_id;
                 options.recurring = '1';
+            } else {
+                // For one-time payments, use order_id
+                options.order_id = modalData.order_id;
+                options.amount = modalData.amount;
+                options.currency = modalData.currency;
             }
 
             const rzp = new Razorpay(options);
@@ -239,6 +253,7 @@ class RazorpayCheckout {
 
     handlePaymentSuccess(response, transactionHash, intent = 'payment') {
         const paymentId = response.razorpay_payment_id;
+        const subscriptionId = response.razorpay_subscription_id;
         
         if (!paymentId) {
             this.handleRazorpayError(new Error('Payment ID not found'));
@@ -255,6 +270,7 @@ class RazorpayCheckout {
             action: 'fluent_cart_razorpay_confirm_payment',
             razorpay_payment_id: paymentId,
             razorpay_order_id: response.razorpay_order_id || '',
+            razorpay_subscription_id: subscriptionId || '',
             razorpay_signature: response.razorpay_signature || '',
             transaction_hash: transactionHash,
             intent: intent

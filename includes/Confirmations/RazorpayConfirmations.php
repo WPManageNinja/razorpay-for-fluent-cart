@@ -105,14 +105,18 @@ class RazorpayConfirmations
 
     /**
      * Handle subscription authentication payment
-     * This is the initial payment that authenticates the card for future charges
+     * 
+     * In Razorpay's flow:
+     * 1. Subscription is already created on Razorpay
+     * 2. Customer completes authentication transaction
+     * 3. We just need to confirm payment and update subscription status
      */
     private function handleSubscriptionAuthentication($transaction, $vendorPayment, $paymentId)
     {
         $status = Arr::get($vendorPayment, 'status');
         
         // For subscriptions, we need the payment to be successful (authorized or captured)
-        if ($status !== 'authorized' && $status !== 'captured') {
+        if ($status !== 'authorized' && $status !== 'captured' && $status !== 'paid') {
             wp_send_json_error([
                 'message' => __('Payment authentication failed', 'razorpay-for-fluent-cart')
             ], 400);
@@ -134,27 +138,8 @@ class RazorpayConfirmations
             ], 400);
         }
 
-        // Prepare billing info from payment
-        $billingInfo = [
-            'payment_method_type' => Arr::get($vendorPayment, 'method'),
-        ];
-
-        if ($card = Arr::get($vendorPayment, 'card')) {
-            $billingInfo['card_brand'] = Arr::get($card, 'network');
-            $billingInfo['card_last_4'] = Arr::get($card, 'last4');
-            $billingInfo['card_type'] = Arr::get($card, 'type');
-        }
-
-        // Create subscription on Razorpay
-        $result = (new RazorpaySubscriptions())->createSubscriptionOnRazorpay($subscription, [
-            'billingInfo' => $billingInfo
-        ]);
-
-        if (empty($result)) {
-            wp_send_json_error([
-                'message' => __('Failed to create subscription on Razorpay', 'razorpay-for-fluent-cart')
-            ], 400);
-        }
+        // Update subscription status after authentication
+        (new RazorpaySubscriptions())->updateSubscriptionAfterAuth($subscription, $vendorPayment);
 
         fluent_cart_add_log(
             __('Razorpay Subscription Authentication Complete', 'razorpay-for-fluent-cart'),

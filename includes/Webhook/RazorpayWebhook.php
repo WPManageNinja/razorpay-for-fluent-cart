@@ -427,7 +427,10 @@ class RazorpayWebhook
 
     /**
      * Handle subscription.authenticated webhook
-     * This is fired after the authentication transaction succeeds
+     * 
+     * This is fired after the authentication transaction succeeds.
+     * At this point, subscription is already created on Razorpay.
+     * We just need to update the local subscription status.
      */
     public function handleSubscriptionAuthenticated($data)
     {
@@ -439,36 +442,14 @@ class RazorpayWebhook
             $this->sendResponse(400, 'Subscription ID not found');
         }
 
-        $order = Arr::get($data, 'order');
-        if (!$order) {
-            $this->sendResponse(404, 'Order not found');
-        }
-
-        // Find subscription model
-        $subscriptionModel = Subscription::query()
-            ->where('parent_order_id', $order->id)
-            ->where('current_payment_method', 'razorpay')
-            ->first();
-
+        $subscriptionModel = $this->findSubscriptionByRazorpayId($subscriptionId);
+        
         if (!$subscriptionModel) {
-            $this->sendResponse(404, 'Subscription model not found');
+            $this->sendResponse(404, 'Subscription not found');
         }
 
-        // Create subscription on Razorpay if not already created
-        if (!$subscriptionModel->vendor_subscription_id) {
-            $billingInfo = [];
-            if ($razorpayPayment) {
-                $billingInfo = [
-                    'payment_method_type' => Arr::get($razorpayPayment, 'method'),
-                    'card_brand' => Arr::get($razorpayPayment, 'card.network'),
-                    'card_last_4' => Arr::get($razorpayPayment, 'card.last4'),
-                ];
-            }
-
-            (new RazorpaySubscriptions())->createSubscriptionOnRazorpay($subscriptionModel, [
-                'billingInfo' => $billingInfo
-            ]);
-        }
+        // Update subscription after authentication
+        (new RazorpaySubscriptions())->updateSubscriptionAfterAuth($subscriptionModel, $razorpayPayment);
 
         fluent_cart_add_log(
             __('Razorpay Subscription Authenticated', 'razorpay-for-fluent-cart'),

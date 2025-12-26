@@ -2,6 +2,12 @@
 /**
  * Razorpay Subscriptions Module
  *
+ * Follows Razorpay's subscription workflow:
+ * 1. Create Plan
+ * 2. Create Subscription (returns subscription_id)
+ * 3. Authentication Transaction (uses subscription_id)
+ * 4. Subscription becomes active when billing starts
+ *
  * @package RazorpayFluentCart
  * @since 1.0.0
  */
@@ -30,6 +36,11 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
     /**
      * Handle subscription payment initialization
      * 
+     * Razorpay Flow:
+     * 1. Create/Get Plan
+     * 2. Create Subscription on Razorpay
+     * 3. Return subscription_id for authentication transaction
+     * 
      * @param object $paymentInstance
      * @param array $paymentArgs
      * @return array|WP_Error
@@ -41,68 +52,71 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
         $fcCustomer = $paymentInstance->order->customer;
         $subscription = $paymentInstance->subscription;
 
-        // Create or get Razorpay plan
+        // Step 1: Create or get Razorpay plan
         $plan = self::getOrCreateRazorpayPlan($paymentInstance);
 
         if (is_wp_error($plan)) {
             return $plan;
         }
 
+        $planId = Arr::get($plan, 'id');
+
         // Save plan ID to subscription
         $subscription->update([
-            'vendor_plan_id' => Arr::get($plan, 'id'),
+            'vendor_plan_id' => $planId,
         ]);
 
-        // Prepare Razorpay order data for authentication transaction
-        $authAmount = (int)$transaction->total;
-        
-        // If total is 0 or less, use minimum amount for authorization
-        // This happens with trial periods or when upfront amount is 0
-        if ($authAmount <= 0) {
-            $authAmount = RazorpayHelper::getMinimumAmountForAuthorization($transaction->currency);
+        // Step 2: Create subscription on Razorpay (BEFORE authentication)
+        $razorpaySubscription = $this->createRazorpaySubscription($paymentInstance, $planId);
+
+        if (is_wp_error($razorpaySubscription)) {
+            return $razorpaySubscription;
         }
 
-        // Create Razorpay order for authentication
-        $orderData = [
-            'amount' => $authAmount,
-            'currency' => strtoupper($transaction->currency),
-            'receipt' => $transaction->uuid,
-            'notes' => [
-                'order_hash' => $order->uuid,
-                'transaction_hash' => $transaction->uuid,
-                'subscription_hash' => $subscription->uuid,
-                'customer_name' => $fcCustomer->first_name . ' ' . $fcCustomer->last_name,
-                'razorpay_plan_id' => Arr::get($plan, 'id'),
-                'intent' => 'subscription_auth',
-                'amount_is_for_authorization_only' => $authAmount <= 0 ? 'yes' : 'no'
-            ]
+        $subscriptionId = Arr::get($razorpaySubscription, 'id');
+        $shortUrl = Arr::get($razorpaySubscription, 'short_url');
+
+        // Save subscription ID
+        $subscription->update([
+            'vendor_subscription_id' => $subscriptionId,
+            'vendor_customer_id' => Arr::get($razorpaySubscription, 'customer_id'),
+        ]);
+
+        // Store subscription info in transaction meta
+        $transaction->updateMeta('razorpay_subscription_id', $subscriptionId);
+        $transaction->updateMeta('razorpay_plan_id', $planId);
+
+        // Prepare modal data for frontend
+        $settings = new \RazorpayFluentCart\Settings\RazorpaySettingsBase();
+        $modalData = [
+            'api_key'      => $settings->getApiKey(),
+            'name'         => get_bloginfo('name'),
+            'description'  => $subscription->item_name,
+            'prefill'      => [
+                'name'  => $fcCustomer->first_name . ' ' . $fcCustomer->last_name,
+                'email' => $fcCustomer->email,
+                'contact' => $fcCustomer->phone ?: ''
+            ],
+            'theme'        => [
+                'color' => apply_filters('razorpay_fc/modal_theme_color', '#3399cc')
+            ],
         ];
 
-        // Apply filters for customization
-        $orderData = apply_filters('fluent_cart/razorpay/subscription_order_args', $orderData, [
-            'order' => $order,
-            'transaction' => $transaction,
-            'subscription' => $subscription
-        ]);
-
-        // Create Razorpay order
-        $razorpayOrder = RazorpayAPI::createRazorpayObject('orders', $orderData);
-
-        if (is_wp_error($razorpayOrder)) {
-            return $razorpayOrder;
-        }
-
-        // Store razorpay order ID in transaction meta for later use
-        $transaction->updateMeta('razorpay_order_id', Arr::get($razorpayOrder, 'id'));
-        $transaction->updateMeta('razorpay_plan_id', Arr::get($plan, 'id'));
-
+        // Return response for authentication
         return [
             'status' => 'success',
             'nextAction' => 'razorpay',
             'actionName' => 'custom',
             'message' => __('Opening Razorpay payment popup...', 'razorpay-for-fluent-cart'),
+            'payment_args' => array_merge($paymentArgs, [
+                'modal_data' => $modalData,
+                'transaction_hash' => $transaction->uuid,
+                'checkout_type' => 'modal'
+            ]),
             'data' => [
-                'razorpay_order' => $razorpayOrder,
+                'razorpay_subscription' => $razorpaySubscription,
+                'subscription_id' => $subscriptionId,
+                'short_url' => $shortUrl,
                 'intent' => 'subscription',
                 'transaction_hash' => $transaction->uuid,
             ]
@@ -129,15 +143,16 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
         // Create unique plan identifier
         $fctRazorpayPlanId = 'fct_razorpay_plan_'
             . $order->mode . '_'
-            . $product->id . '_'
-            . $order->variation_id . '_'
+            . $transaction->total . '_'
+            . $product->ID . '_'
+            . $variation->id . '_'
             . $subscription->recurring_total . '_'
             . $subscription->billing_interval . '_'
             . $subscription->bill_times . '_'
             . $subscription->trial_days . '_'
             . $transaction->currency;
 
-        $fctRazorpayPlanId = apply_filters('fluent_cart/razorpay_recurring_plan_id', $fctRazorpayPlanId, [
+        $fctRazorpayPlanId = apply_filters('razorpay_fc/recurring_plan_id', $fctRazorpayPlanId, [
             'variation' => $variation,
             'product' => $product,
             'subscription' => $subscription
@@ -161,18 +176,18 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
                 'name' => substr($subscription->item_name, 0, 250), // Razorpay has 250 char limit
                 'amount' => (int)($subscription->recurring_total),
                 'currency' => strtoupper($transaction->currency),
-                'description' => $fctRazorpayPlanId
+                'description' => $product->post_title . ' - ' . $variation->post_title
             ]
         ];
 
         // Add notes for tracking
         $planData['notes'] = [
-            'product_id' => $product->id,
-            'variation_id' => $order->variation_id,
+            'fct_product_id' => $product->ID,
+            'fct_variation_id' => $variation->id,
             'fluentcart_plan_id' => $fctRazorpayPlanId
         ];
 
-        $planData = apply_filters('fluent_cart/razorpay/plan_data', $planData, [
+        $planData = apply_filters('razorpay_fc/plan_data', $planData, [
             'subscription' => $subscription,
             'order' => $order,
             'product' => $product
@@ -188,6 +203,167 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
         $product->updateProductMeta($fctRazorpayPlanId, Arr::get($plan, 'id'));
 
         return $plan;
+    }
+
+    /**
+     * Create subscription on Razorpay
+     * 
+     * This is called BEFORE authentication transaction
+     * 
+     * @param object $paymentInstance
+     * @param string $planId
+     * @return array|WP_Error
+     */
+    private function createRazorpaySubscription($paymentInstance, $planId)
+    {
+        $subscription = $paymentInstance->subscription;
+        $order = $paymentInstance->order;
+        $transaction = $paymentInstance->transaction;
+        $fcCustomer = $order->customer;
+
+        $subscriptionData = [
+            'plan_id' => $planId,
+            'customer_notify' => apply_filters('razorpay_fc/subscription_customer_notify', 1, [
+                'subscription' => $subscription,
+                'order' => $order
+            ]),
+            'quantity' => 1,
+            'total_count' => $subscription->bill_times ?: 0, // 0 means infinite
+            'notes' => [
+                'order_hash' => $order->uuid,
+                'subscription_hash' => $subscription->uuid,
+                'transaction_hash' => $transaction->uuid,
+                'customer_email' => $fcCustomer->email,
+                'customer_name' => $fcCustomer->first_name . ' ' . $fcCustomer->last_name
+            ]
+        ];
+
+        // Handle trial period - set start date in future
+        if ($subscription->trial_days > 0) {
+            $startDate = time() + ($subscription->trial_days * DAY_IN_SECONDS);
+            $subscriptionData['start_at'] = $startDate;
+        }
+
+        // Handle upfront amount (setup fees, deposits, etc.)
+        $upfrontAmount = (int)$subscription->signup_fee;
+        if ($upfrontAmount > 0) {
+            $subscriptionData['addons'] = [
+                [
+                    'item' => [
+                        'name' => __('Setup Fee', 'razorpay-for-fluent-cart'),
+                        'amount' => $upfrontAmount,
+                        'currency' => strtoupper($transaction->currency)
+                    ]
+                ]
+            ];
+        }
+
+        $subscriptionData = apply_filters('razorpay_fc/subscription_create_data', $subscriptionData, [
+            'subscription' => $subscription,
+            'order' => $order,
+            'transaction' => $transaction
+        ]);
+
+        // Create subscription on Razorpay
+        $razorpaySubscription = RazorpayAPI::createRazorpayObject('subscriptions', $subscriptionData);
+
+        if (is_wp_error($razorpaySubscription)) {
+            fluent_cart_add_log(
+                __('Razorpay Subscription Creation Failed', 'razorpay-for-fluent-cart'),
+                __('Failed to create subscription on Razorpay. Error: ', 'razorpay-for-fluent-cart') . $razorpaySubscription->get_error_message(),
+                'error',
+                [
+                    'module_name' => 'order',
+                    'module_id' => $order->id,
+                ]
+            );
+            return $razorpaySubscription;
+        }
+
+        fluent_cart_add_log(
+            __('Razorpay Subscription Created', 'razorpay-for-fluent-cart'),
+            'Subscription created on Razorpay. ID: ' . Arr::get($razorpaySubscription, 'id') . ', Status: ' . Arr::get($razorpaySubscription, 'status'),
+            'info',
+            [
+                'module_name' => 'order',
+                'module_id' => $order->id
+            ]
+        );
+
+        return $razorpaySubscription;
+    }
+
+    /**
+     * Update subscription status after authentication
+     * Called after customer completes authentication transaction
+     * 
+     * @param Subscription $subscriptionModel
+     * @param array $razorpayPayment Payment details from Razorpay
+     * @return void
+     */
+    public function updateSubscriptionAfterAuth($subscriptionModel, $razorpayPayment = [])
+    {
+        $oldStatus = $subscriptionModel->status;
+        $order = $subscriptionModel->order;
+
+        // Fetch latest subscription data from Razorpay
+        $vendorSubscriptionId = $subscriptionModel->vendor_subscription_id;
+        
+        if (!$vendorSubscriptionId) {
+            return;
+        }
+
+        $razorpaySubscription = RazorpayAPI::getRazorpayObject('subscriptions/' . $vendorSubscriptionId);
+        
+        if (is_wp_error($razorpaySubscription)) {
+            fluent_cart_add_log(
+                __('Razorpay Subscription Update Failed', 'razorpay-for-fluent-cart'),
+                $razorpaySubscription->get_error_message(),
+                'error',
+                [
+                    'module_name' => 'subscription',
+                    'module_id' => $subscriptionModel->id,
+                ]
+            );
+            return;
+        }
+
+        // Get subscription update data
+        $updateData = RazorpayHelper::getSubscriptionUpdateData($razorpaySubscription, $subscriptionModel);
+        
+        $subscriptionModel->update($updateData);
+
+        // Store billing info if provided
+        if ($razorpayPayment) {
+            $billingInfo = [
+                'payment_method_type' => Arr::get($razorpayPayment, 'method'),
+            ];
+
+            if ($card = Arr::get($razorpayPayment, 'card')) {
+                $billingInfo['card_brand'] = Arr::get($card, 'network');
+                $billingInfo['card_last_4'] = Arr::get($card, 'last4');
+                $billingInfo['card_type'] = Arr::get($card, 'type');
+            }
+
+            $subscriptionModel->updateMeta('active_payment_method', $billingInfo);
+        }
+
+        fluent_cart_add_log(
+            __('Razorpay Subscription Authentication Complete', 'razorpay-for-fluent-cart'),
+            'Subscription ID: ' . $vendorSubscriptionId . ', Status: ' . Arr::get($razorpaySubscription, 'status'),
+            'info',
+            [
+                'module_name' => 'subscription',
+                'module_id' => $subscriptionModel->id,
+            ]
+        );
+
+        // Dispatch activation event if status changed to active or trialing
+        if ($oldStatus != $subscriptionModel->status && 
+            (Status::SUBSCRIPTION_ACTIVE === $subscriptionModel->status || 
+             Status::SUBSCRIPTION_TRIALING === $subscriptionModel->status)) {
+            (new SubscriptionActivated($subscriptionModel, $order, $order->customer))->dispatch();
+        }
     }
 
     /**
@@ -224,27 +400,18 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
         // Get subscription update data
         $subscriptionUpdateData = RazorpayHelper::getSubscriptionUpdateData($razorpaySubscription, $subscriptionModel);
 
-        // Fetch all payments for this subscription
-        $payments = RazorpayAPI::getRazorpayObject('subscriptions/' . $vendorSubscriptionId . '/invoices');
+        // Fetch all invoices for this subscription
+        $invoices = RazorpayAPI::getRazorpayObject('invoices', [
+            'subscription_id' => $vendorSubscriptionId
+        ]);
 
-        if (is_wp_error($payments)) {
-            // Log but don't fail - update subscription state anyway
-            fluent_cart_add_log(
-                __('Razorpay Subscription Sync - Payment Fetch Failed', 'razorpay-for-fluent-cart'),
-                $payments->get_error_message(),
-                'warning',
-                [
-                    'module_name' => 'subscription',
-                    'module_id' => $subscriptionModel->id,
-                ]
-            );
-        } else {
-            // Process subscription invoices/payments
-            $invoices = Arr::get($payments, 'items', []);
+        if (!is_wp_error($invoices)) {
+            $invoiceItems = Arr::get($invoices, 'items', []);
             $newPayment = false;
             $order = $subscriptionModel->order;
 
-            foreach ($invoices as $invoice) {
+            foreach ($invoiceItems as $invoice) {
+                // Only process paid invoices
                 if (Arr::get($invoice, 'status') === 'paid') {
                     $paymentId = Arr::get($invoice, 'payment_id');
                     
@@ -313,127 +480,6 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
         }
 
         return $subscriptionModel;
-    }
-
-    /**
-     * Create subscription on Razorpay after successful authentication
-     * 
-     * @param Subscription $subscriptionModel
-     * @param array $args Expected: 'payment_id', 'razorpay_signature'
-     * @return array
-     */
-    public function createSubscriptionOnRazorpay($subscriptionModel, $args = [])
-    {
-        $order = $subscriptionModel->order;
-        $oldStatus = $subscriptionModel->status;
-
-        // Get plan ID and customer info
-        $planId = $subscriptionModel->vendor_plan_id;
-
-        if (!$planId) {
-            fluent_cart_add_log(
-                __('Razorpay Subscription Creation Failed', 'razorpay-for-fluent-cart'),
-                __('Plan ID not found for subscription.', 'razorpay-for-fluent-cart'),
-                'error',
-                [
-                    'module_name' => 'order',
-                    'module_id' => $order->id,
-                ]
-            );
-            return [];
-        }
-
-        // Prepare subscription data
-        $subscriptionData = [
-            'plan_id' => $planId,
-            'customer_notify' => apply_filters('fluent_cart/razorpay/subscription_customer_notify', 1, [
-                'subscription' => $subscriptionModel,
-                'order' => $order
-            ]),
-            'quantity' => 1,
-            'total_count' => $subscriptionModel->bill_times ?: 0, // 0 means infinite
-            'notes' => [
-                'order_id' => $order->id,
-                'subscription_id' => $subscriptionModel->id,
-                'customer_email' => $order->customer->email
-            ]
-        ];
-
-        // Handle trial period - set start date in future
-        if ($subscriptionModel->trial_days > 0) {
-            $startDate = time() + ($subscriptionModel->trial_days * DAY_IN_SECONDS);
-            $subscriptionData['start_at'] = $startDate;
-        }
-
-        // Add addons if any (upfront amount, setup fees, etc.)
-        $addons = Arr::get($args, 'addons', []);
-        if (!empty($addons)) {
-            $subscriptionData['addons'] = $addons;
-        }
-
-        $subscriptionData = apply_filters('fluent_cart/razorpay/subscription_create_data', $subscriptionData, [
-            'subscription' => $subscriptionModel,
-            'order' => $order
-        ]);
-
-        // Create subscription on Razorpay
-        $razorpaySubscription = RazorpayAPI::createRazorpayObject('subscriptions', $subscriptionData);
-
-        if (is_wp_error($razorpaySubscription)) {
-            fluent_cart_add_log(
-                __('Razorpay Subscription Creation Failed', 'razorpay-for-fluent-cart'),
-                __('Failed to create subscription on Razorpay. Error: ', 'razorpay-for-fluent-cart') . $razorpaySubscription->get_error_message(),
-                'error',
-                [
-                    'module_name' => 'order',
-                    'module_id' => $order->id,
-                ]
-            );
-            return [];
-        }
-
-        // Get status
-        $status = RazorpayHelper::getFctSubscriptionStatus(Arr::get($razorpaySubscription, 'status'));
-
-        // Update subscription model
-        $updateData = [
-            'vendor_subscription_id' => Arr::get($razorpaySubscription, 'id'),
-            'status' => $status,
-            'vendor_customer_id' => Arr::get($razorpaySubscription, 'customer_id'),
-        ];
-
-        // Set next billing date if available
-        if (Arr::get($razorpaySubscription, 'charge_at')) {
-            $updateData['next_billing_date'] = DateTime::anyTimeToGmt(
-                Arr::get($razorpaySubscription, 'charge_at')
-            )->format('Y-m-d H:i:s');
-        }
-
-        $subscriptionModel->update($updateData);
-
-        // Store billing info if provided
-        if (Arr::get($args, 'billingInfo')) {
-            $subscriptionModel->updateMeta('active_payment_method', Arr::get($args, 'billingInfo', []));
-        }
-
-        fluent_cart_add_log(
-            __('Razorpay Subscription Created', 'razorpay-for-fluent-cart'),
-            'Subscription created on Razorpay. ID: ' . Arr::get($razorpaySubscription, 'id'),
-            'info',
-            [
-                'module_name' => 'order',
-                'module_id' => $order->id
-            ]
-        );
-
-        // Dispatch activation event if status changed to active or trialing
-        if ($oldStatus != $subscriptionModel->status && 
-            (Status::SUBSCRIPTION_ACTIVE === $subscriptionModel->status || 
-             Status::SUBSCRIPTION_TRIALING === $subscriptionModel->status)) {
-            (new SubscriptionActivated($subscriptionModel, $order, $order->customer))->dispatch();
-        }
-
-        return $updateData;
     }
 
     /**
