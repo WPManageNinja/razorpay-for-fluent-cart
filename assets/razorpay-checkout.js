@@ -16,11 +16,11 @@ class RazorpayCheckout {
     init() {
         this.paymentLoader.enableCheckoutButton(this.translate(this.submitButton.text));
         const razorpayContainer = document.querySelector('.fluent-cart-checkout_embed_payment_container_razorpay');
-        if (razorpayContainer) {
+        const hasCustomContent = razorpayContainer && razorpayContainer.dataset.hasCustomContent === 'true';
+        if (razorpayContainer && !hasCustomContent) {
             razorpayContainer.innerHTML = '';
+            this.renderPaymentInfo();
         }
-
-        this.renderPaymentInfo();
 
         this.#apiKey = this.data?.payment_args?.api_key;
 
@@ -41,31 +41,51 @@ class RazorpayCheckout {
         return translations[string] || string;
     }
 
+    getPaymentMethodIcons() {
+        return {
+            cards: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>`,
+            upi: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>`,
+            netbanking: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"></path><path d="M3 10h18"></path><path d="M5 6l7-3 7 3"></path><path d="M4 10v11"></path><path d="M20 10v11"></path><path d="M8 14v3"></path><path d="M12 14v3"></path><path d="M16 14v3"></path></svg>`,
+            wallets: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"></path><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"></path><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"></path></svg>`,
+            emi: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M6 8h.01"></path><path d="M10 8h.01"></path><path d="M14 8h.01"></path><path d="M18 8h.01"></path><path d="M8 12h.01"></path><path d="M12 12h.01"></path><path d="M16 12h.01"></path><path d="M7 16h10"></path></svg>`
+        };
+    }
+
     renderPaymentInfo() {
+        let container = document.querySelector('.fluent-cart-checkout_embed_payment_container_razorpay');
+        if (!container) {
+            return;
+        }
+
+        const config = window.fct_razorpay_data?.display_config || {};
+        const showLabels = config.show_labels !== false; // Default to true
+        const icons = this.getPaymentMethodIcons();
+
+        const paymentMethods = [
+            { key: 'cards', icon: icons.cards, label: this.$t('Cards') },
+            { key: 'upi', icon: icons.upi, label: this.$t('UPI') },
+            { key: 'netbanking', icon: icons.netbanking, label: this.$t('Net Banking') },
+            { key: 'wallets', icon: icons.wallets, label: this.$t('Wallets') },
+            { key: 'emi', icon: icons.emi, label: this.$t('EMI') }
+        ];
+
         let html = '<div class="fct-razorpay-info">';
         
         // Simple header
         html += '<div class="fct-razorpay-header">';
-        html += '<p class="fct-razorpay-subheading">' + this.$t('Available payment methods on Checkout') + '</p>';
+        html += '<p class="fct-razorpay-subheading">' + this.$t('Available payment methods') + '</p>';
         html += '</div>';
         
-        // Payment methods
+        // Payment methods with icons
         html += '<div class="fct-razorpay-methods">';
-        html += '<div class="fct-razorpay-method">';
-        html += '<span class="fct-method-name">' + this.$t('Credit/Debit Cards') + '</span>';
-        html += '</div>';
-        html += '<div class="fct-razorpay-method">';
-        html += '<span class="fct-method-name">' + this.$t('UPI') + '</span>';
-        html += '</div>';
-        html += '<div class="fct-razorpay-method">';
-        html += '<span class="fct-method-name">' + this.$t('Net Banking') + '</span>';
-        html += '</div>';
-        html += '<div class="fct-razorpay-method">';
-        html += '<span class="fct-method-name">' + this.$t('Wallets') + '</span>';
-        html += '</div>';
-        html += '<div class="fct-razorpay-method">';
-        html += '<span class="fct-method-name">' + this.$t('EMI') + '</span>';
-        html += '</div>';
+        paymentMethods.forEach(method => {
+            html += '<div class="fct-razorpay-method" title="' + method.label + '">';
+            html += '<span class="fct-method-icon">' + method.icon + '</span>';
+            if (showLabels) {
+                html += '<span class="fct-method-name">' + method.label + '</span>';
+            }
+            html += '</div>';
+        });
         html += '</div>';
         
         html += '</div>';
@@ -100,27 +120,58 @@ class RazorpayCheckout {
             }
             
             .fct-razorpay-methods {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-                gap: 10px;
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 12px;
             }
             
             .fct-razorpay-method {
                 display: flex;
+                flex-direction: column;
                 align-items: center;
                 justify-content: center;
-                padding: 10px;
+                padding: 12px 16px;
                 background: white;
                 border: 1px solid #ddd;
-                border-radius: 6px;
+                border-radius: 8px;
                 transition: all 0.2s ease;
-                cursor: text;
+                min-width: 70px;
+            }
+            
+            .fct-razorpay-method:hover {
+                border-color: #3399cc;
+                box-shadow: 0 2px 8px rgba(51, 153, 204, 0.15);
+            }
+            
+            .fct-method-icon {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #3399cc;
+                margin-bottom: 6px;
+            }
+            
+            .fct-method-icon svg {
+                width: 28px;
+                height: 28px;
             }
             
             .fct-method-name {
-                font-size: 12px;
+                font-size: 11px;
                 font-weight: 500;
-                color: #333;
+                color: #555;
+                text-align: center;
+            }
+            
+            /* Icons only mode (no labels) */
+            .fct-razorpay-method:not(:has(.fct-method-name)) {
+                padding: 10px 14px;
+                min-width: auto;
+            }
+            
+            .fct-razorpay-method:not(:has(.fct-method-name)) .fct-method-icon {
+                margin-bottom: 0;
             }
             
             @media (max-width: 768px) {
@@ -128,25 +179,27 @@ class RazorpayCheckout {
                     padding: 16px;
                 }
                 
-                .fct-razorpay-heading {
-                    font-size: 16px;
-                }
-                
                 .fct-razorpay-methods {
-                    grid-template-columns: repeat(2, 1fr);
                     gap: 8px;
                 }
                 
                 .fct-razorpay-method {
-                    padding: 8px;
+                    padding: 10px 12px;
+                    min-width: 60px;
+                }
+                
+                .fct-method-icon svg {
+                    width: 24px;
+                    height: 24px;
+                }
+                
+                .fct-method-name {
+                    font-size: 10px;
                 }
             }
         </style>`;
 
-        let container = document.querySelector('.fluent-cart-checkout_embed_payment_container_razorpay');
-        if (container) {
-            container.innerHTML = html;
-        }
+        container.innerHTML = html;
     }
 
     async handleModalCheckout(remoteResponse) {
@@ -328,7 +381,14 @@ class RazorpayCheckout {
 }
 
 window.addEventListener("fluent_cart_load_payments_razorpay", function (e) {
+    console.log('fluent_cart_load_payments_razorpay');
     const translate = window.fluentcart.$t;
+
+    const razorpayContainer = document.querySelector('.fluent-cart-checkout_embed_payment_container_razorpay');
+    if (razorpayContainer && razorpayContainer.children.length > 0) {
+        razorpayContainer.dataset.hasCustomContent = 'true';
+    }
+    
     addLoadingText();
     fetch(e.detail.paymentInfoUrl, {
         method: "POST",
@@ -376,8 +436,12 @@ window.addEventListener("fluent_cart_load_payments_razorpay", function (e) {
     function addLoadingText() {
         let razorpayButtonContainer = document.querySelector('.fluent-cart-checkout_embed_payment_container_razorpay');
         if (razorpayButtonContainer) {
+            if (razorpayButtonContainer.dataset.hasCustomContent === 'true') {
+                return;
+            }
             const loadingMessage = document.createElement('p');
             loadingMessage.id = 'fct_loading_payment_processor';
+            loadingMessage.className = 'fct-razorpay-loading';
             const translations = window.fct_razorpay_data?.translations || {};
             function $t(string) {
                 return translations[string] || string;
