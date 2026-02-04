@@ -13,7 +13,7 @@ use FluentCart\App\Helpers\CurrenciesHelper;
 
 class RazorpayConfirmations
 {
-    public function init()
+    public function init(): void
     {
         add_action('wp_ajax_fluent_cart_razorpay_confirm_payment', [$this, 'confirmModalPayment']);
         add_action('wp_ajax_nopriv_fluent_cart_razorpay_confirm_payment', [$this, 'confirmModalPayment']);
@@ -21,78 +21,120 @@ class RazorpayConfirmations
 
     public function confirmModalPayment()
     {
-        $transactionHash = sanitize_text_field(Arr::get($_REQUEST, 'transaction_hash'));
-        
-        if (!$transactionHash) {
-            wp_send_json_error([
-                'message' => __('Invalid request', 'razorpay-for-fluent-cart')
-            ], 400);
+        if (!isset($_REQUEST['_nonce'])) {
+            $this->confirmationFailed(400);
         }
 
-        $transaction = OrderTransaction::query()
+        if (isset($_REQUEST['_nonce']) && !wp_verify_nonce(sanitize_text_field(wp_unslash(Arr::get($_REQUEST, '_nonce'))), 'fluent_cart_razorpay_nonce')) {
+            $this->confirmationFailed(400);
+        }
+
+        $transactionHash = sanitize_text_field(Arr::get($_REQUEST, 'transaction_hash'));
+
+        if (!$transactionHash) {
+            $this->confirmationFailed(400);
+        }
+
+        $paymentId = sanitize_text_field(wp_unslash(Arr::get($_REQUEST, 'razorpay_payment_id')));
+        if (!$paymentId) {
+            $this->confirmationFailed(400);
+        }
+
+        $razorpayPayment = RazorpayAPI::getRazorpayObject('payments/' . $paymentId);
+
+        if (is_wp_error($razorpayPayment)) {
+            $this->confirmationFailed(400);
+        }
+
+        $paymentNotes = Arr::get($razorpayPayment, 'notes', []);
+        $paymentTransactionHash = Arr::get($paymentNotes, 'transaction_hash');
+
+        if (empty($paymentTransactionHash)) {
+            $this->confirmationFailed(404);
+        }
+
+        if ($paymentTransactionHash !== $transactionHash) {
+            fluent_cart_add_log(
+                'Razorpay Confirmation',
+                sprintf(
+                    'Payment ownership mismatch. Payment %s belongs to transaction %s, not %s',
+                    $paymentId,
+                    $paymentTransactionHash,
+                    $transactionHash
+                )
+            );
+            $this->confirmationFailed(400);
+        }
+
+        $transactionModel = OrderTransaction::query()
             ->where('uuid', $transactionHash)
             ->where('payment_method', 'razorpay')
             ->first();
 
-        if (!$transaction) {
-            wp_send_json_error([
-                'message' => __('Invalid transaction', 'razorpay-for-fluent-cart')
-            ], 400);
+        if (!$transactionModel) {
+            $this->confirmationFailed(404);
         }
 
-        $paymentId = sanitize_text_field(Arr::get($_REQUEST, 'razorpay_payment_id'));
-        if (!$paymentId) {
-            wp_send_json_error([
-                'message' => __('Payment ID is required', 'razorpay-for-fluent-cart')
-            ], 400);
+        // If already succeeded, return success with redirect (idempotent response)
+        if ($transactionModel->status === Status::TRANSACTION_SUCCEEDED) {
+            wp_send_json_success([
+                'message'      => __('Payment already confirmed', 'razorpay-for-fluent-cart'),
+                'redirect_url' => $transactionModel->getReceiptPageUrl()
+            ]);
         }
 
-        $vendorPayment = RazorpayAPI::getRazorpayObject('payments/' . $paymentId);
+        $razorpayPaymentStatus = Arr::get($razorpayPayment, 'status');
+        $captured = Arr::get($razorpayPayment, 'captured', false);
 
+        if ($razorpayPaymentStatus === 'authorized' && !$captured) {
+            $captureAmount = Arr::get($razorpayPayment, 'amount');
+            $currency = Arr::get($razorpayPayment, 'currency', 'INR');
 
-        if (is_wp_error($vendorPayment)) {
-            wp_send_json_error([
-                'message' => $vendorPayment->get_error_message()
-            ], 400);
-        }
-
-        $status = Arr::get($vendorPayment, 'status');
-        $captured = Arr::get($vendorPayment, 'captured', false);
-        
-        if ($status === 'authorized' && !$captured) {
-            $captureAmount = Arr::get($vendorPayment, 'amount');
-            $currency = Arr::get($vendorPayment, 'currency', 'INR');
-            
             $captureData = [
                 'amount' => intval($captureAmount),
                 'currency' => strtoupper($currency)
             ];
-            
+
             $capturedPayment = RazorpayAPI::createRazorpayObject('payments/' . $paymentId . '/capture', $captureData);
-            
+
             if (is_wp_error($capturedPayment)) {
-                wp_send_json_error([
-                    'message' => __('Failed to capture payment: ', 'razorpay-for-fluent-cart') . $capturedPayment->get_error_message()
-                ], 400);
+                fluent_cart_add_log(
+                    'Razorpay Confirmation',
+                    'Failed to capture payment: ' . $capturedPayment->get_error_message(),
+                    'error',
+                    [
+                        'module_name' => 'order',
+                        'module_id'   => $transactionModel->order_id,
+                    ]
+                );
+
+               $this->confirmationFailed(400);
             }
-            
-            $vendorPayment = $capturedPayment;
-            $status = Arr::get($vendorPayment, 'status');
+
+            $razorpayPayment = $capturedPayment;
+            $razorpayPaymentStatus = Arr::get($razorpayPayment, 'status');
         }
 
-        if ($status == 'paid' || $status == 'captured' || $status == 'authorized') {
-           $this->confirmPaymentSuccessByCharge($transaction, $vendorPayment);
-            
+        // Only accept captured/paid status - not just authorized
+        if ($razorpayPaymentStatus === 'paid' || $razorpayPaymentStatus === 'captured') {
+            $this->confirmPaymentSuccessByCharge($transactionModel, $razorpayPayment);
             wp_send_json_success([
                 'message' => __('Payment successful', 'razorpay-for-fluent-cart'),
-                'redirect_url' => $transaction->getReceiptPageUrl()
+                'redirect_url' => $transactionModel->getReceiptPageUrl()
             ]);
         }
 
+        fluent_cart_add_log(
+            'Razorpay Confirmation',
+            sprintf('Payment verification failed. Status: %s, Payment ID: %s', $razorpayPaymentStatus, $paymentId),
+            'warning',
+            [
+                'module_name' => 'order',
+                'module_id'   => $transactionModel->order_id,
+            ]
+        );
 
-        wp_send_json_error([
-            'message' => __('Payment verification failed', 'razorpay-for-fluent-cart')
-        ], 400);
+        $this->confirmationFailed(400);
     }
 
 
@@ -105,9 +147,8 @@ class RazorpayConfirmations
      */
     public function confirmPaymentSuccessByCharge(OrderTransaction $transaction, $chargeData = [])
     {
-
         if (!$transaction || $transaction->status === Status::TRANSACTION_SUCCEEDED) {
-            return;
+            return null;
         }
 
         $order = Order::query()->where('id', $transaction->order_id)->first();
@@ -118,7 +159,7 @@ class RazorpayConfirmations
                 'Order not found for transaction ID: ' . $transaction->id,
                 'error'
             );
-            return;
+            return null;
         }
 
         $paymentId = Arr::get($chargeData, 'id');
@@ -127,9 +168,8 @@ class RazorpayConfirmations
         $status = Arr::get($chargeData, 'status');
         $method = Arr::get($chargeData, 'method', '');
 
-        if (CurrenciesHelper::isZeroDecimal($currency)) {
-            $amount = (int) $amount * 100;
-        }
+        // Razorpay returns amount in smallest currency unit (paise for INR, yen for JPY)
+        // FluentCart also stores in smallest unit, so no conversion needed
 
         $status = RazorpayHelper::getFctStatusFromRazorpayStatus($status);
 
@@ -149,7 +189,6 @@ class RazorpayConfirmations
             $updateData['card_last_4'] = Arr::get($card, 'last4', '');
             $updateData['card_brand'] = Arr::get($card, 'network', '');
             $updateData['payment_method_type'] = 'card';
-            
             $updateData['meta']['card_info'] = [
                 'last4'     => Arr::get($card, 'last4'),
                 'brand'     => Arr::get($card, 'network'),
@@ -179,12 +218,15 @@ class RazorpayConfirmations
         $transaction->fill($updateData);
         $transaction->save();
 
+        // Calculate display amount for logging
+        $displayAmount = CurrenciesHelper::isZeroDecimal($currency) ? $amount : ($amount / 100);
+
         fluent_cart_add_log(
             __('Razorpay Payment Confirmation', 'razorpay-for-fluent-cart'),
             sprintf(
                 'Payment confirmed successfully. Payment ID: %s, Amount: %s %s, Method: %s',
                 $paymentId,
-                $amount / 100,
+                $displayAmount,
                 $currency,
                 $method
             ),
@@ -198,5 +240,12 @@ class RazorpayConfirmations
         (new StatusHelper($order))->syncOrderStatuses($transaction);
 
         return $order;
+    }
+
+    public function confirmationFailed($code = 400)
+    {
+        wp_send_json_error([
+            'message' => __('Payment confirmation failed', 'razorpay-for-fluent-cart')
+        ], $code);
     }
 }

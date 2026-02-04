@@ -156,6 +156,7 @@ class RazorpayGateway extends AbstractPaymentGateway
                 'api_key' => $this->settings->getApiKey(),
                 'checkout_type' => $this->settings->get('checkout_type'),
                 'ajax_url' => admin_url('admin-ajax.php'),
+                'confirm_nonce' => wp_create_nonce('fluent_cart_razorpay_nonce'),
                 'translations' => [
                     'Processing payment...' => __('Processing payment...', 'razorpay-for-fluent-cart'),
                     'Pay Now' => __('Pay Now', 'razorpay-for-fluent-cart'),

@@ -299,7 +299,8 @@ class RazorpayCheckout {
             razorpay_payment_id: paymentId,
             razorpay_order_id: response.razorpay_order_id || '',
             razorpay_signature: response.razorpay_signature || '',
-            transaction_hash: transactionHash
+            transaction_hash: transactionHash,
+            _nonce: window.fct_razorpay_data?.confirm_nonce || ''
         });
 
         const that = this;
