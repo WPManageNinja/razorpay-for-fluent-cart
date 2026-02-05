@@ -205,8 +205,10 @@ class RazorpayCheckout {
     async handleModalCheckout(remoteResponse) {
         const modalData = remoteResponse?.payment_args?.modal_data;
         const transactionHash = remoteResponse?.payment_args?.transaction_hash;
+        const isSubscription = remoteResponse?.payment_args?.is_subscription || modalData?.subscription_id != null;
 
-        if (!modalData || !modalData.order_id) {
+        // For subscriptions, we need subscription_id; for one-time, we need order_id
+        if (!modalData || (!modalData.order_id && !modalData.subscription_id)) {
             this.handleRazorpayError(new Error('Invalid modal data'));
             return;
         }
@@ -220,17 +222,15 @@ class RazorpayCheckout {
         }
 
         try {
+            // Build options based on payment type
             const options = {
                 key: modalData.api_key,
-                amount: modalData.amount,
-                currency: modalData.currency,
                 name: modalData.name,
                 description: modalData.description,
-                order_id: modalData.order_id,
                 prefill: modalData.prefill,
                 theme: modalData.theme,
                 handler: (response) => {
-                    this.handlePaymentSuccess(response, transactionHash);
+                    this.handlePaymentSuccess(response, transactionHash, isSubscription);
                 },
                 modal: {
                     escape: true,
@@ -240,9 +240,19 @@ class RazorpayCheckout {
                 }
             };
 
+            // KEY DIFFERENCE: subscription uses subscription_id, no amount/order_id
+            if (isSubscription) {
+                options.subscription_id = modalData.subscription_id;
+                // Amount is NOT passed for subscriptions - Razorpay calculates from subscription
+            } else {
+                options.order_id = modalData.order_id;
+                options.amount = modalData.amount;
+                options.currency = modalData.currency;
+            }
+
             const rzp = new Razorpay(options);
             rzp.open();
-            
+
         } catch (error) {
             console.error('Error opening Razorpay modal:', error);
             this.handleRazorpayError(error);
@@ -284,9 +294,9 @@ class RazorpayCheckout {
         });
     }
 
-    handlePaymentSuccess(response, transactionHash) {
+    handlePaymentSuccess(response, transactionHash, isSubscription = false) {
         const paymentId = response.razorpay_payment_id;
-        
+
         if (!paymentId) {
             this.handleRazorpayError(new Error('Payment ID not found'));
             return;
@@ -294,14 +304,24 @@ class RazorpayCheckout {
 
         this.paymentLoader?.changeLoaderStatus(this.$t('Verifying payment...'));
 
-        const params = new URLSearchParams({
+        // Build confirmation params
+        const paramsObj = {
             action: 'fluent_cart_razorpay_confirm_payment',
             razorpay_payment_id: paymentId,
-            razorpay_order_id: response.razorpay_order_id || '',
             razorpay_signature: response.razorpay_signature || '',
             transaction_hash: transactionHash,
             _nonce: window.fct_razorpay_data?.confirm_nonce || ''
-        });
+        };
+
+        // Include subscription-specific or order-specific data
+        if (isSubscription) {
+            paramsObj.razorpay_subscription_id = response.razorpay_subscription_id || '';
+            paramsObj.is_subscription = '1';
+        } else {
+            paramsObj.razorpay_order_id = response.razorpay_order_id || '';
+        }
+
+        const params = new URLSearchParams(paramsObj);
 
         const that = this;
         const xhr = new XMLHttpRequest();
