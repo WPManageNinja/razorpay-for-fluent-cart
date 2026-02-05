@@ -190,38 +190,46 @@ class RazorpayConfirmations
             $this->confirmationFailed(400);
         }
 
-        $paymentNotes = Arr::get($razorpayPayment, 'notes', []);
-        $paymentTransactionHash = Arr::get($paymentNotes, 'transaction_hash');
+        $razorpaySubscription = null;
+        if ($razorpaySubscriptionId) {
+            $razorpaySubscription = RazorpayAPI::getRazorpayObject('subscriptions/' . $razorpaySubscriptionId);
+            if (!is_wp_error($razorpaySubscription)) {
+                $subscriptionNotes = Arr::get($razorpaySubscription, 'notes', []);
+                $subscriptionTransactionHash = Arr::get($subscriptionNotes, 'transaction_hash');
 
-        if (empty($paymentTransactionHash)) {
-            fluent_cart_add_log(
-                'Razorpay Subscription Confirmation',
-                sprintf('Payment %s missing transaction hash in notes', $paymentId),
-                'error',
-                [
-                    'module_name' => 'order',
-                    'module_id'   => $order->id,
-                ]
-            );
-            $this->confirmationFailed(404);
-        }
+                if (empty($subscriptionTransactionHash)) {
+                    fluent_cart_add_log(
+                        'Razorpay Subscription Confirmation',
+                        sprintf('Subscription %s missing transaction hash in notes', $razorpaySubscriptionId),
+                        'error',
+                        [
+                            'module_name' => 'order',
+                            'module_id'   => $order->id,
+                        ]
+                    );
+                    $this->confirmationFailed(404);
+                }
 
-        if ($paymentTransactionHash !== $transactionHash) {
-            fluent_cart_add_log(
-                'Razorpay Subscription Confirmation',
-                sprintf(
-                    'Payment ownership mismatch. Payment %s belongs to transaction %s, not %s',
-                    $paymentId,
-                    $paymentTransactionHash,
-                    $transactionHash
-                ),
-                'error',
-                [
-                    'module_name' => 'order',
-                    'module_id'   => $order->id,
-                ]
-            );
-            $this->confirmationFailed(400);
+                if ($subscriptionTransactionHash !== $transactionHash) {
+                    fluent_cart_add_log(
+                        'Razorpay Subscription Confirmation',
+                        sprintf(
+                            'Subscription ownership mismatch. Subscription %s belongs to transaction %s, not %s',
+                            $razorpaySubscriptionId,
+                            $subscriptionTransactionHash,
+                            $transactionHash
+                        ),
+                        'error',
+                        [
+                            'module_name' => 'order',
+                            'module_id'   => $order->id,
+                        ]
+                    );
+                    $this->confirmationFailed(400);
+                }
+            } else {
+                $razorpaySubscription = null;
+            }
         }
 
         $razorpayPaymentStatus = Arr::get($razorpayPayment, 'status');
@@ -237,14 +245,6 @@ class RazorpayConfirmations
                 ]
             );
             $this->confirmationFailed(400);
-        }
-
-        $razorpaySubscription = null;
-        if ($razorpaySubscriptionId) {
-            $razorpaySubscription = RazorpayAPI::getRazorpayObject('subscriptions/' . $razorpaySubscriptionId);
-            if (is_wp_error($razorpaySubscription)) {
-                $razorpaySubscription = null;
-            }
         }
 
         $this->confirmPaymentSuccessByCharge($transactionModel, $razorpayPayment);

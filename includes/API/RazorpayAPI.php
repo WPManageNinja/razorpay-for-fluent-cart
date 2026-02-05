@@ -97,7 +97,7 @@ class RazorpayAPI
         }
         
         $url = self::$baseUrl . $endpoint;
-        
+
         $args = [
             'method'  => strtoupper($method),
             'headers' => [

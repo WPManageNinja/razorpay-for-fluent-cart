@@ -138,6 +138,18 @@ class RazorpaySubscriptionProcessor
 
         if ($totalCount > 0) {
             $subscriptionData['total_count'] = $totalCount;
+        } else {
+            // For unlimited subscriptions (bill_times = 0), set appropriate total_count
+            // Razorpay supports max 100 years, but cycles depend on billing interval
+            $unlimitedCounts = [
+                'daily'       => 3650,  // ~10 years
+                'weekly'      => 520,   // ~10 years
+                'monthly'     => 120,   // ~10 years
+                'quarterly'   => 40,    // ~10 years
+                'half_yearly' => 20,    // ~10 years
+                'yearly'      => 100,   // 100 years (max supported by Razorpay)
+            ];
+            $subscriptionData['total_count'] = $unlimitedCounts[$billingInterval] ?? 120;
         }
 
         $razorpaySubscription = RazorpayAPI::createRazorpayObject('subscriptions', $subscriptionData);
@@ -245,13 +257,23 @@ class RazorpaySubscriptionProcessor
             ],
         ];
 
-        $remainingBillTimes = 0;
         if ($billTimes > 0) {
             $completedBills = (int) $subscription->bill_count;
             $remainingBillTimes = max(0, $billTimes - $completedBills);
             if ($remainingBillTimes > 0) {
                 $subscriptionData['total_count'] = $remainingBillTimes;
             }
+        } else {
+            // For unlimited subscriptions (bill_times = 0), set appropriate total_count
+            $unlimitedCounts = [
+                'daily'       => 3650,  // ~10 years
+                'weekly'      => 520,   // ~10 years
+                'monthly'     => 120,   // ~10 years
+                'quarterly'   => 40,    // ~10 years
+                'half_yearly' => 20,    // ~10 years
+                'yearly'      => 100,   // 100 years (max supported by Razorpay)
+            ];
+            $subscriptionData['total_count'] = $unlimitedCounts[$billingInterval] ?? 120;
         }
 
         if ($reactivationTrialDays > 0) {
