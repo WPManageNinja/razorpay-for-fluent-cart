@@ -26,8 +26,8 @@ class RazorpayHelper
     public static function getFctStatusFromRazorpaySubscriptionStatus($status)
     {
         $statusMap = [
-            'created'       => Status::SUBSCRIPTION_INTENDED,
-            'authenticated' => Status::SUBSCRIPTION_TRIALING,
+            'created'       => Status::SUBSCRIPTION_CREATED,
+            'authenticated' => Status::SUBSCRIPTION_AUTHENTICATED,
             'active'        => Status::SUBSCRIPTION_ACTIVE,
             'pending'       => Status::SUBSCRIPTION_PENDING,
             'halted'        => Status::SUBSCRIPTION_EXPIRING,
@@ -119,17 +119,17 @@ class RazorpayHelper
         return $razorpayCustomer;
     }
 
-    public static function calculateNextBillingDate($razorpaySubscription)
+    public static function getNextBillingDate($razorpaySubscription)
     {
+        $currentEnd = Arr::get($razorpaySubscription, 'current_end');
+        if ($currentEnd) {
+            return gmdate('Y-m-d H:i:s', $currentEnd);
+        }
+
         $chargeAt = Arr::get($razorpaySubscription, 'charge_at');
 
         if ($chargeAt) {
             return gmdate('Y-m-d H:i:s', $chargeAt);
-        }
-
-        $currentEnd = Arr::get($razorpaySubscription, 'current_end');
-        if ($currentEnd) {
-            return gmdate('Y-m-d H:i:s', $currentEnd);
         }
 
         return null;

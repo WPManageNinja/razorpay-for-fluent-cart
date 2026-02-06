@@ -9,6 +9,7 @@ use FluentCart\App\Models\Subscription;
 use FluentCart\App\Modules\PaymentMethods\Core\AbstractSubscriptionModule;
 use FluentCart\App\Modules\Subscriptions\Services\SubscriptionService;
 use FluentCart\Framework\Support\Arr;
+use FluentCart\App\Services\DateTime\DateTime;
 use RazorpayFluentCart\API\RazorpayAPI;
 use RazorpayFluentCart\RazorpayHelper;
 
@@ -57,34 +58,6 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
             'status'      => RazorpayHelper::getFctStatusFromRazorpaySubscriptionStatus($status),
             'canceled_at' => $endedAt ? gmdate('Y-m-d H:i:s', $endedAt) : gmdate('Y-m-d H:i:s'),
         ];
-    }
-
-    /**
-     * Cancel subscription from FluentCart admin
-     *
-     * @param array        $data
-     * @param Order        $order
-     * @param Subscription $subscription
-     *
-     * @return array|WP_Error
-     */
-    public function cancelSubscription($data, $order, $subscription)
-    {
-        $vendorSubscriptionId = $subscription->vendor_subscription_id;
-
-        if (empty($vendorSubscriptionId)) {
-            return new \WP_Error(
-                'razorpay_cancel_error',
-                __('No Razorpay subscription ID found for this subscription.', 'razorpay-for-fluent-cart')
-            );
-        }
-
-        $cancelAtCycleEnd = Arr::get($data, 'cancel_at_cycle_end', false);
-
-        return $this->cancel($vendorSubscriptionId, [
-            'cancel_at_cycle_end' => $cancelAtCycleEnd,
-            'mode'                => $order->mode,
-        ]);
     }
 
     /**
@@ -221,8 +194,26 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
         foreach ($invoiceItems as $invoice) {
             $invoiceStatus = Arr::get($invoice, 'status');
             $paymentId = Arr::get($invoice, 'payment_id');
+            $invoiceSubscriptionId = Arr::get($invoice, 'subscription_id');
 
-            // Only process paid invoices with a payment ID
+            if ($invoiceSubscriptionId !== $vendorSubscriptionId) {
+                fluent_cart_add_log(
+                    'Razorpay Subscription Sync',
+                    sprintf(
+                        'Skipping invoice %s - belongs to subscription %s, not %s',
+                        Arr::get($invoice, 'id'),
+                        $invoiceSubscriptionId,
+                        $vendorSubscriptionId
+                    ),
+                    'warning',
+                    [
+                        'module_name' => 'subscription',
+                        'module_id'   => $subscriptionModel->id,
+                    ]
+                );
+                continue;
+            }
+
             if ($invoiceStatus !== 'paid' || empty($paymentId)) {
                 continue;
             }
@@ -236,19 +227,26 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
                 continue;
             }
 
-            // Check if this is the initial payment
-            $isInitialPayment = $this->isInitialPayment($invoice, $subscriptionModel);
-            if ($isInitialPayment) {
-                continue;
-            }
-
-            // Get payment details
             $payment = RazorpayAPI::getRazorpayObject('payments/' . $paymentId);
             if (is_wp_error($payment)) {
                 continue;
             }
 
-            // Record renewal payment
+            $transaction = OrderTransaction::query()
+                ->where('vendor_charge_id', '')
+                ->where('subscription_id', $subscriptionModel->id)
+                ->where('transaction_type', Status::TRANSACTION_TYPE_CHARGE)
+                ->where('payment_method', 'razorpay')
+                ->first();
+
+            if ($transaction) {
+                $transaction->update([
+                    'vendor_charge_id' => $paymentId,
+                    'status' => Status::TRANSACTION_SUCCEEDED
+                ]);
+                continue;
+            }
+
             $amount = Arr::get($invoice, 'amount_paid', Arr::get($payment, 'amount', 0));
             $currency = Arr::get($invoice, 'currency', Arr::get($payment, 'currency', 'INR'));
             $paidAt = Arr::get($invoice, 'paid_at', Arr::get($payment, 'created_at'));
@@ -268,13 +266,6 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
                 ],
             ];
 
-            // Calculate next billing date
-            $nextChargeAt = Arr::get($razorpaySubscription, 'charge_at');
-            $subscriptionUpdateData = [];
-            if ($nextChargeAt) {
-                $subscriptionUpdateData['next_billing_date'] = gmdate('Y-m-d H:i:s', $nextChargeAt);
-            }
-
             SubscriptionService::recordRenewalPayment($transactionData, $subscriptionModel, $subscriptionUpdateData);
 
             fluent_cart_add_log(
@@ -290,11 +281,13 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
 
         // Update subscription status from Razorpay
         $razorpayStatus = Arr::get($razorpaySubscription, 'status');
-        $fctStatus = RazorpayHelper::getFctStatusFromRazorpaySubscriptionStatus($razorpayStatus);
+        $nextBillingDate = RazorpayHelper::getNextBillingDate($razorpaySubscription);
+        $fctSubStatus = RazorpayHelper::getFctStatusFromRazorpaySubscriptionStatus($razorpayStatus);
 
         $subscriptionUpdateData = [
-            'status'          => $fctStatus,
+            'status'          => $fctSubStatus,
             'vendor_response' => $razorpaySubscription,
+            'next_billing_date' => $nextBillingDate,
         ];
 
         // Update next billing date
@@ -303,7 +296,6 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
             $subscriptionUpdateData['next_billing_date'] = gmdate('Y-m-d H:i:s', $nextChargeAt);
         }
 
-        // Update ended_at/canceled_at
         $endedAt = Arr::get($razorpaySubscription, 'ended_at');
         if ($endedAt && in_array($razorpayStatus, ['cancelled', 'completed'])) {
             if ($razorpayStatus === 'cancelled') {
@@ -319,91 +311,6 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
     }
 
     /**
-     * Check if an invoice/payment is the initial payment
-     *
-     * @param array        $invoice
-     * @param Subscription $subscription
-     *
-     * @return bool
-     */
-    private function isInitialPayment($invoice, $subscription)
-    {
-        // Check if bill_count is still 0 or 1
-        if ($subscription->bill_count <= 1) {
-            // Check invoice type/description
-            $description = Arr::get($invoice, 'description', '');
-            $lineItems = Arr::get($invoice, 'line_items', []);
-
-            foreach ($lineItems as $item) {
-                $itemName = Arr::get($item, 'name', '');
-                if (stripos($itemName, 'Initial') !== false || stripos($itemName, 'Setup') !== false) {
-                    return true;
-                }
-            }
-
-            // Check if payment was created around subscription creation time
-            $invoicePaidAt = Arr::get($invoice, 'paid_at', 0);
-            $subscriptionCreatedAt = strtotime($subscription->created_at);
-
-            // If paid within 1 hour of subscription creation, likely initial payment
-            if ($invoicePaidAt && abs($invoicePaidAt - $subscriptionCreatedAt) < 3600) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Reactivate subscription
-     *
-     * @param array  $data
-     * @param string $subscriptionId
-     *
-     * @return array|WP_Error
-     */
-    public function reactivateSubscription($data, $subscriptionId)
-    {
-        // For Razorpay, reactivation requires creating a new subscription
-        // The actual reactivation is handled by RazorpaySubscriptionProcessor::handleRenewalSubscription()
-        // This method is called to check if reactivation is possible
-
-        $subscription = Subscription::query()->find($subscriptionId);
-
-        if (!$subscription) {
-            return new \WP_Error(
-                'razorpay_reactivate_error',
-                __('Subscription not found.', 'razorpay-for-fluent-cart')
-            );
-        }
-
-        // Check if subscription can be reactivated
-        $allowedStatuses = [
-            Status::SUBSCRIPTION_CANCELED,
-            Status::SUBSCRIPTION_EXPIRED,
-            Status::SUBSCRIPTION_EXPIRING,
-        ];
-
-        if (!in_array($subscription->status, $allowedStatuses)) {
-            return new \WP_Error(
-                'razorpay_reactivate_error',
-                __('This subscription cannot be reactivated.', 'razorpay-for-fluent-cart')
-            );
-        }
-
-        return [
-            'status'  => 'can_reactivate',
-            'message' => __('Subscription can be reactivated. A new payment will be required.', 'razorpay-for-fluent-cart'),
-        ];
-    }
-
-    public function confirmSubscriptionAfterChargeSucceeded($subscription, $subscriptionUpdateData)
-    {
-        $subscription = SubscriptionService::syncSubscriptionStates($subscription, $subscriptionUpdateData);
-        return $subscription;
-    }
-
-    /**
      * Update card/payment method
      *
      * @param array  $data
@@ -413,6 +320,7 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
      */
     public function cardUpdate($data, $subscriptionId)
     {
+        // TODO: Implement card update, not in use currently
         $subscription = Subscription::query()->find($subscriptionId);
 
         if (!$subscription) {

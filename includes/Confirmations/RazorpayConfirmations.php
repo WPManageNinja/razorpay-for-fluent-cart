@@ -251,14 +251,10 @@ class RazorpayConfirmations
 
             $razorpaySubStatus = Arr::get($razorpaySubscription, 'status');
             $fctStatus = RazorpayHelper::getFctStatusFromRazorpaySubscriptionStatus($razorpaySubStatus);
-
-            if ($razorpaySubStatus === 'authenticated' && !$subscription->trial_days) {
-                $fctStatus = Status::SUBSCRIPTION_ACTIVE;
-            } 
             
             $subscriptionUpdateData['status'] = $fctStatus;
 
-            $nextBillingDate = RazorpayHelper::calculateNextBillingDate($razorpaySubscription);
+            $nextBillingDate = RazorpayHelper::getNextBillingDate($razorpaySubscription);
             if ($nextBillingDate) {
                 $subscriptionUpdateData['next_billing_date'] = $nextBillingDate;
             }
@@ -410,10 +406,6 @@ class RazorpayConfirmations
 
         } else {
             if ($subscription) {
-                ds([
-                    'subscriptionUpdateData' => $subscriptionUpdateData,
-                ]);
-
                 $subscription->fill($subscriptionUpdateData);
                 $subscription->save();
                 $subscription->updateMeta('active_payment_method', $billingInfo);

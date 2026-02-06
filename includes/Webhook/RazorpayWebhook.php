@@ -8,6 +8,7 @@ use FluentCart\App\Models\Order;
 use FluentCart\App\Models\OrderTransaction;
 use FluentCart\App\Models\Subscription;
 use FluentCart\App\Events\Order\OrderRefund;
+use FluentCart\App\Events\Subscription\SubscriptionActivated;
 use FluentCart\App\Modules\Subscriptions\Services\SubscriptionService;
 use FluentCart\Framework\Support\Arr;
 use RazorpayFluentCart\API\RazorpayAPI;
@@ -438,6 +439,8 @@ class RazorpayWebhook
         $razorpaySubscription = Arr::get($data, 'payload.subscription.entity');
         $razorpaySubscriptionId = Arr::get($razorpaySubscription, 'id');
 
+        $order = Arr::get($data, 'order');
+
         $subscription = $this->findSubscriptionByVendorId($razorpaySubscriptionId);
 
         if (!$subscription) {
@@ -449,8 +452,12 @@ class RazorpayWebhook
             $this->sendResponse(200, 'Subscription not found in FluentCart');
         }
 
+        if (in_array($subscription->status, [Status::SUBSCRIPTION_ACTIVE, Status::SUBSCRIPTION_TRIALING, Status::SUBSCRIPTION_AUTHENTICATED])) {
+            $this->sendResponse(200, 'Subscription already authenticated');
+        }
+
         // Update subscription status - could be trialing if trial period exists
-        $status = $subscription->trial_days > 0 ? Status::SUBSCRIPTION_TRIALING : Status::SUBSCRIPTION_ACTIVE;
+        $status = Status::SUBSCRIPTION_AUTHENTICATED;
 
         $subscription->update([
             'status'          => $status,
@@ -462,8 +469,8 @@ class RazorpayWebhook
             sprintf('Subscription %d authenticated. Status: %s', $subscription->id, $status),
             'info',
             [
-                'module_name' => 'subscription',
-                'module_id'   => $subscription->id,
+                'module_name' => 'order',
+                'module_id'   => $order->id,
             ]
         );
 
@@ -481,13 +488,21 @@ class RazorpayWebhook
         $razorpaySubscription = Arr::get($data, 'payload.subscription.entity');
         $razorpaySubscriptionId = Arr::get($razorpaySubscription, 'id');
 
+        $order = Arr::get($data, 'order');
+
         $subscription = $this->findSubscriptionByVendorId($razorpaySubscriptionId);
 
         if (!$subscription) {
             $this->sendResponse(200, 'Subscription not found in FluentCart');
         }
 
-        $nextBillingDate = RazorpayHelper::calculateNextBillingDate($razorpaySubscription);
+        if ($subscription->status == Status::SUBSCRIPTION_ACTIVE) {
+            $this->sendResponse(200, 'Subscription already activated');
+        }
+
+        $oldStatus = $subscription->status;
+
+        $nextBillingDate = RazorpayHelper::getNextBillingDate($razorpaySubscription);
 
         $updateData = [
             'status'          => Status::SUBSCRIPTION_ACTIVE,
@@ -498,15 +513,23 @@ class RazorpayWebhook
             $updateData['next_billing_date'] = $nextBillingDate;
         }
 
-        $subscription->update($updateData);
+        if ($order->type == Status::ORDER_TYPE_RENEWAL) {
+            $updateData['canceled_at'] = null;
+        } else {
+            $subscription->update($updateData);
+
+            if ($oldStatus != $subscription->status && in_array($subscription->status, [Status::SUBSCRIPTION_ACTIVE, Status::SUBSCRIPTION_TRIALING])) {
+                (new SubscriptionActivated($subscription, $order, $order->customer))->dispatch();
+            }
+        }
 
         fluent_cart_add_log(
             'Razorpay Webhook - Subscription Activated',
             sprintf('Subscription %d activated', $subscription->id),
             'info',
             [
-                'module_name' => 'subscription',
-                'module_id'   => $subscription->id,
+                'module_name' => 'order',
+                'module_id'   => $order->id,
             ]
         );
 
@@ -526,6 +549,8 @@ class RazorpayWebhook
         $razorpaySubscriptionId = Arr::get($razorpaySubscription, 'id');
         $paymentId = Arr::get($razorpayPayment, 'id');
 
+        $order = Arr::get($data, 'order');
+
         $subscription = $this->findSubscriptionByVendorId($razorpaySubscriptionId);
 
         if (!$subscription) {
@@ -540,15 +565,11 @@ class RazorpayWebhook
         // Check if this payment already exists (deduplication)
         $existingTransaction = OrderTransaction::query()
             ->where('vendor_charge_id', $paymentId)
+            ->where('payment_method', 'razorpay')
             ->first();
 
         if ($existingTransaction) {
             $this->sendResponse(200, 'Payment already processed');
-        }
-
-        // Check if this is the initial payment (already handled by modal confirmation)
-        if ($this->isInitialSubscriptionPayment($razorpayPayment, $subscription)) {
-            $this->sendResponse(200, 'Initial payment already handled');
         }
 
         // This is a renewal payment - record it
@@ -572,7 +593,7 @@ class RazorpayWebhook
         ];
 
         // Calculate next billing date
-        $nextBillingDate = RazorpayHelper::calculateNextBillingDate($razorpaySubscription);
+        $nextBillingDate = RazorpayHelper::getNextBillingDate($razorpaySubscription);
         $subscriptionUpdateData = [
             'status'          => Status::SUBSCRIPTION_ACTIVE,
             'vendor_response' => $razorpaySubscription,
@@ -591,8 +612,8 @@ class RazorpayWebhook
                 sprintf('Failed to record renewal: %s', $transaction->get_error_message()),
                 'error',
                 [
-                    'module_name' => 'subscription',
-                    'module_id'   => $subscription->id,
+                    'module_name' => 'order',
+                    'module_id'   => $order->id,
                 ]
             );
             $this->sendResponse(500, 'Failed to record renewal payment');
@@ -627,13 +648,7 @@ class RazorpayWebhook
             $this->sendResponse(200, 'Subscription not found in FluentCart');
         }
 
-        $endedAt = Arr::get($razorpaySubscription, 'ended_at');
-
-        $subscription->update([
-            'status'          => Status::SUBSCRIPTION_CANCELED,
-            'canceled_at'     => $endedAt ? gmdate('Y-m-d H:i:s', $endedAt) : gmdate('Y-m-d H:i:s'),
-            'vendor_response' => $razorpaySubscription,
-        ]);
+        $subscription->reSyncFromRemote();
 
         fluent_cart_add_log(
             'Razorpay Webhook - Subscription Cancelled',
@@ -664,12 +679,7 @@ class RazorpayWebhook
             $this->sendResponse(200, 'Subscription not found in FluentCart');
         }
 
-        $pausedAt = Arr::get($razorpaySubscription, 'paused_at');
-
-        $subscription->update([
-            'status'          => Status::SUBSCRIPTION_PAUSED,
-            'vendor_response' => $razorpaySubscription,
-        ]);
+        $subscription->reSyncFromRemote();
 
         fluent_cart_add_log(
             'Razorpay Webhook - Subscription Paused',
@@ -700,18 +710,7 @@ class RazorpayWebhook
             $this->sendResponse(200, 'Subscription not found in FluentCart');
         }
 
-        $nextBillingDate = RazorpayHelper::calculateNextBillingDate($razorpaySubscription);
-
-        $updateData = [
-            'status'          => Status::SUBSCRIPTION_ACTIVE,
-            'vendor_response' => $razorpaySubscription,
-        ];
-
-        if ($nextBillingDate) {
-            $updateData['next_billing_date'] = $nextBillingDate;
-        }
-
-        $subscription->update($updateData);
+        $subscription->reSyncFromRemote();
 
         fluent_cart_add_log(
             'Razorpay Webhook - Subscription Resumed',
@@ -743,10 +742,7 @@ class RazorpayWebhook
             $this->sendResponse(200, 'Subscription not found in FluentCart');
         }
 
-        $subscription->update([
-            'status'          => Status::SUBSCRIPTION_EXPIRING,
-            'vendor_response' => $razorpaySubscription,
-        ]);
+        $subscription->reSyncFromRemote();
 
         fluent_cart_add_log(
             'Razorpay Webhook - Subscription Halted',
@@ -778,17 +774,11 @@ class RazorpayWebhook
             $this->sendResponse(200, 'Subscription not found in FluentCart');
         }
 
-        $endedAt = Arr::get($razorpaySubscription, 'ended_at');
-
-        $subscription->update([
-            'status'          => Status::SUBSCRIPTION_COMPLETED,
-            'expire_at'       => $endedAt ? gmdate('Y-m-d H:i:s', $endedAt) : gmdate('Y-m-d H:i:s'),
-            'vendor_response' => $razorpaySubscription,
-        ]);
+        $subscription->reSyncFromRemote();
 
         fluent_cart_add_log(
             'Razorpay Webhook - Subscription Completed',
-            sprintf('Subscription %d completed all billing cycles', $subscription->id),
+            sprintf('Subscription %d completed', $subscription->id),
             'info',
             [
                 'module_name' => 'subscription',
@@ -815,15 +805,7 @@ class RazorpayWebhook
             $this->sendResponse(200, 'Subscription not found in FluentCart');
         }
 
-        // Mark as past_due if payment is pending after active state
-        $newStatus = $subscription->status === Status::SUBSCRIPTION_ACTIVE
-            ? Status::SUBSCRIPTION_PAST_DUE
-            : Status::SUBSCRIPTION_PENDING;
-
-        $subscription->update([
-            'status'          => $newStatus,
-            'vendor_response' => $razorpaySubscription,
-        ]);
+        $subscription->reSyncFromRemote();
 
         fluent_cart_add_log(
             'Razorpay Webhook - Subscription Pending',
@@ -838,13 +820,6 @@ class RazorpayWebhook
         $this->sendResponse(200, 'Subscription pending');
     }
 
-    /**
-     * Find FluentCart subscription by Razorpay subscription ID
-     *
-     * @param string $razorpaySubscriptionId
-     *
-     * @return Subscription|null
-     */
     private function findSubscriptionByVendorId($razorpaySubscriptionId)
     {
         if (empty($razorpaySubscriptionId)) {
@@ -856,46 +831,6 @@ class RazorpayWebhook
             ->first();
     }
 
-    /**
-     * Check if a payment is the initial subscription payment
-     *
-     * @param array        $razorpayPayment
-     * @param Subscription $subscription
-     *
-     * @return bool
-     */
-    private function isInitialSubscriptionPayment($razorpayPayment, $subscription)
-    {
-        // Check if bill_count is 0 or 1 (initial state)
-        if ($subscription->bill_count > 1) {
-            return false;
-        }
-
-        // Check if payment was created around subscription creation time
-        $paymentCreatedAt = Arr::get($razorpayPayment, 'created_at', 0);
-        $subscriptionCreatedAt = strtotime($subscription->created_at);
-
-        // If payment was created within 5 minutes of subscription, it's likely the initial payment
-        if ($paymentCreatedAt && abs($paymentCreatedAt - $subscriptionCreatedAt) < 300) {
-            return true;
-        }
-
-        // Check if we already have a transaction for the initial order
-        $initialTransaction = OrderTransaction::query()
-            ->where('order_id', $subscription->parent_order_id)
-            ->where('status', Status::TRANSACTION_SUCCEEDED)
-            ->first();
-
-        if ($initialTransaction) {
-            // If the existing transaction is from the same timeframe, this is a duplicate
-            $transactionCreatedAt = strtotime($initialTransaction->created_at);
-            if (abs($paymentCreatedAt - $transactionCreatedAt) < 300) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     /**
      * Get FluentCart order from webhook data

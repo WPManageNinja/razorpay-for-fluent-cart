@@ -98,6 +98,11 @@ class RazorpayAPI
         
         $url = self::$baseUrl . $endpoint;
 
+        // For GET requests, append query parameters to URL
+        if ($method === 'GET' && !empty($data)) {
+            $url = add_query_arg($data, $url);
+        }
+
         $args = [
             'method'  => strtoupper($method),
             'headers' => [
