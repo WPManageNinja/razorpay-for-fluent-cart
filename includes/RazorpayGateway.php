@@ -190,6 +190,16 @@ class RazorpayGateway extends AbstractPaymentGateway
         return 'https://dashboard.razorpay.com/app/payments/' . $transaction->vendor_charge_id;
     }
 
+    public function getSubscriptionUrl($url, $data): string
+    {
+        $subscription = Arr::get($data, 'subscription', null);
+        if (!$subscription || !$subscription->vendor_subscription_id) {
+            return 'https://dashboard.razorpay.com/app/subscriptions';
+        }
+
+        return 'https://dashboard.razorpay.com/app/subscriptions/' . $subscription->vendor_subscription_id;
+    }
+
     public function processRefund($transaction, $amount, $args)
     {
         if (!$amount) {

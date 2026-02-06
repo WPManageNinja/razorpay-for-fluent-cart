@@ -19,9 +19,6 @@ class RazorpaySubscriptionProcessor
     public function handleSubscription(PaymentInstance $paymentInstance, $paymentArgs = [])
     {
         $order = $paymentInstance->order;
-        $transaction = $paymentInstance->transaction;
-        $subscription = $paymentInstance->subscription;
-        $fcCustomer = $order->customer;
 
         $settings = new RazorpaySettingsBase();
         $checkoutType = $settings->get('checkout_type');
@@ -36,10 +33,10 @@ class RazorpaySubscriptionProcessor
         $isRenewal = $order->type === 'renewal';
 
         if ($isRenewal) {
-            return $this->handleRenewalSubscription($paymentInstance, $paymentArgs);
+            return $this->handleRenewalSubscription($paymentInstance, $order,$paymentArgs);
         }
 
-        return $this->handleInitialSubscription($paymentInstance, $paymentArgs);
+        return $this->handleInitialSubscription($paymentInstance, $order, $paymentArgs);
     }
 
     /**
@@ -50,9 +47,8 @@ class RazorpaySubscriptionProcessor
      * 4. Real trial ($0 first): first == 0, trial days → No addon, start_at
      * 5. 100% coupon ($0 first): first == 0, trial days (simulated) → No addon, start_at
      */
-    private function handleInitialSubscription(PaymentInstance $paymentInstance, $paymentArgs = [])
+    private function handleInitialSubscription(PaymentInstance $paymentInstance, $order, $paymentArgs = [])
     {
-        $order = $paymentInstance->order;
         $transaction = $paymentInstance->transaction;
         $subscription = $paymentInstance->subscription;
         $fcCustomer = $order->customer;
@@ -93,8 +89,8 @@ class RazorpaySubscriptionProcessor
             'customer_id' => $razorpayCustomer['id'],
             'notes'       => [
                 'fluent_cart_order_id'        => $order->id,
-                'fluent_cart_subscription_id' => $subscription->id,
-                'transaction_hash'            => $transaction->uuid,
+                'fluent_cart_subscription_hash' => $subscription->uuid,
+                'transaction_hash'              => $transaction->uuid,
                 'order_hash'                  => $order->uuid,
                 'customer_email'              => $fcCustomer->email,
             ],
@@ -204,9 +200,8 @@ class RazorpaySubscriptionProcessor
         ];
     }
 
-    private function handleRenewalSubscription(PaymentInstance $paymentInstance, $paymentArgs = [])
+    private function handleRenewalSubscription(PaymentInstance $paymentInstance, $order,$paymentArgs = [])
     {
-        $order = $paymentInstance->order;
         $transaction = $paymentInstance->transaction;
         $subscription = $paymentInstance->subscription;
         $fcCustomer = $order->customer;
@@ -249,7 +244,7 @@ class RazorpaySubscriptionProcessor
             'customer_id' => $razorpayCustomer['id'],
             'notes'       => [
                 'fluent_cart_order_id'        => $order->id,
-                'fluent_cart_subscription_id' => $subscription->id,
+                'fluent_cart_subscription_hash' => $subscription->uuid,
                 'transaction_hash'            => $transaction->uuid,
                 'order_hash'                  => $order->uuid,
                 'customer_email'              => $fcCustomer->email,
@@ -319,7 +314,7 @@ class RazorpaySubscriptionProcessor
             'subscription_id' => $razorpaySubscription['id'],
             'api_key'         => $settings->getApiKey(),
             'name'            => get_bloginfo('name'),
-            'description'     => $subscription->item_name . ' - ' . __('Renewal', 'razorpay-for-fluent-cart'),
+            'description'     => $subscription->item_name . ' - ' . __('Renewal/Reactivation', 'razorpay-for-fluent-cart'),
             'prefill'         => [
                 'name'    => $fcCustomer->first_name . ' ' . $fcCustomer->last_name,
                 'email'   => $fcCustomer->email,

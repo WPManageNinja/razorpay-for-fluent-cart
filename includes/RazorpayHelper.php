@@ -26,7 +26,7 @@ class RazorpayHelper
     public static function getFctStatusFromRazorpaySubscriptionStatus($status)
     {
         $statusMap = [
-            'created'       => Status::SUBSCRIPTION_PENDING,
+            'created'       => Status::SUBSCRIPTION_INTENDED,
             'authenticated' => Status::SUBSCRIPTION_TRIALING,
             'active'        => Status::SUBSCRIPTION_ACTIVE,
             'pending'       => Status::SUBSCRIPTION_PENDING,
@@ -35,6 +35,7 @@ class RazorpayHelper
             'completed'     => Status::SUBSCRIPTION_COMPLETED,
             'expired'       => Status::SUBSCRIPTION_EXPIRED,
             'paused'        => Status::SUBSCRIPTION_PAUSED,
+            'trialing'      => Status::SUBSCRIPTION_TRIALING,
         ];
 
         return $statusMap[$status] ?? Status::SUBSCRIPTION_PENDING;

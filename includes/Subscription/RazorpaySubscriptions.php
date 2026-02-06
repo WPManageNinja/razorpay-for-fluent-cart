@@ -171,29 +171,6 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
     }
 
     /**
-     * Fetch subscription from Razorpay
-     *
-     * @param array        $data
-     * @param Order        $order
-     * @param Subscription $subscription
-     *
-     * @return array|WP_Error
-     */
-    public function fetchSubscription($data, $order, $subscription)
-    {
-        $vendorSubscriptionId = $subscription->vendor_subscription_id;
-
-        if (empty($vendorSubscriptionId)) {
-            return new \WP_Error(
-                'razorpay_fetch_error',
-                __('No Razorpay subscription ID found.', 'razorpay-for-fluent-cart')
-            );
-        }
-
-        return RazorpayAPI::getRazorpayObject('subscriptions/' . $vendorSubscriptionId);
-    }
-
-    /**
      * Re-sync subscription from Razorpay
      *
      * Fetches the latest subscription state and any new invoices/payments
@@ -418,6 +395,12 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
             'status'  => 'can_reactivate',
             'message' => __('Subscription can be reactivated. A new payment will be required.', 'razorpay-for-fluent-cart'),
         ];
+    }
+
+    public function confirmSubscriptionAfterChargeSucceeded($subscription, $subscriptionUpdateData)
+    {
+        $subscription = SubscriptionService::syncSubscriptionStates($subscription, $subscriptionUpdateData);
+        return $subscription;
     }
 
     /**
