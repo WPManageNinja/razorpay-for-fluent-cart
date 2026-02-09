@@ -193,6 +193,18 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
             $subscriptionUpdateData['expire_at'] = gmdate('Y-m-d H:i:s', $endedAt);
         }
 
+        // Update active payment method, it's useful for only if subscription wasn't active already
+        $activePaymentMethod = $subscriptionModel->getMeta('active_payment_method', []);
+        $paymentMethod = Arr::get($razorpaySubscription, 'payment_method', '');
+        if ($paymentMethod) {
+            $activePaymentMethod['payment_method'] = $paymentMethod;
+            if ($paymentMethod === 'card') { 
+                $activePaymentMethod['payment_method'] = 'card';
+                $activePaymentMethod['card_mandate_id'] = Arr::get($razorpaySubscription, 'card_mandate_id', '');
+            }
+        }
+
+        $subscriptionModel->updateMeta('active_payment_method', $activePaymentMethod);
 
         // Sync invoices
         $invoices = RazorpayAPI::getRazorpayObject('invoices', [
@@ -309,7 +321,7 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
         }
 
         // Sync subscription states
-        if ($hasNewInvoice) {
+        if (!$hasNewInvoice) {
             $subscriptionModel = SubscriptionService::syncSubscriptionStates($subscriptionModel, $subscriptionUpdateData);
         }
 

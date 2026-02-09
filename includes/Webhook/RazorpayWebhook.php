@@ -464,6 +464,19 @@ class RazorpayWebhook
             'vendor_response' => $razorpaySubscription,
         ]);
 
+        $activePaymentMethod = $subscription->getMeta('active_payment_method', []);
+
+        $paymentMethod = Arr::get($razorpaySubscription, 'payment_method', '');
+        if ($paymentMethod) {
+            $activePaymentMethod['payment_method'] = $paymentMethod;
+            if ($paymentMethod === 'card') { 
+                $activePaymentMethod['payment_method'] = 'card';
+                $activePaymentMethod['card_mandate_id'] = Arr::get($razorpaySubscription, 'card_mandate_id', '');
+            }
+        }
+
+        $subscription->updateMeta('active_payment_method', $activePaymentMethod);
+
         fluent_cart_add_log(
             'Razorpay Webhook - Subscription Authenticated',
             sprintf('Subscription %d authenticated. Status: %s', $subscription->id, $status),
@@ -522,6 +535,19 @@ class RazorpayWebhook
                 (new SubscriptionActivated($subscription, $order, $order->customer))->dispatch();
             }
         }
+
+        $activePaymentMethod = $subscription->getMeta('active_payment_method', []);
+
+        $paymentMethod = Arr::get($razorpaySubscription, 'payment_method', '');
+        if ($paymentMethod) {
+            $activePaymentMethod['payment_method'] = $paymentMethod;
+            if ($paymentMethod === 'card') { 
+                $activePaymentMethod['payment_method'] = 'card';
+                $activePaymentMethod['card_mandate_id'] = Arr::get($razorpaySubscription, 'card_mandate_id', '');
+            }
+        }
+
+        $subscription->updateMeta('active_payment_method', $activePaymentMethod);
 
         fluent_cart_add_log(
             'Razorpay Webhook - Subscription Activated',

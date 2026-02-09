@@ -166,12 +166,12 @@ class RazorpayConfirmations
             $this->confirmationFailed(404);
         }
 
-        if ($transactionModel->status === Status::TRANSACTION_SUCCEEDED) {
-            wp_send_json_success([
-                'message'      => __('Payment already confirmed', 'razorpay-for-fluent-cart'),
-                'redirect_url' => $transactionModel->getReceiptPageUrl()
-            ]);
-        }
+        // if ($transactionModel->status === Status::TRANSACTION_SUCCEEDED) {
+        //     wp_send_json_success([
+        //         'message'      => __('Payment already confirmed', 'razorpay-for-fluent-cart'),
+        //         'redirect_url' => $transactionModel->getReceiptPageUrl()
+        //     ]);
+        // }
 
         $order = Order::query()->where('id', $transactionModel->order_id)->first();
 
@@ -195,6 +195,7 @@ class RazorpayConfirmations
 
         $notes = Arr::get($razorpaySubscription, 'notes', []);
         $transactionHashFromRazorpay = Arr::get($notes, 'transaction_hash', '');
+        $subscriptionPaymentMethod = Arr::get($razorpaySubscription, 'payment_method', '');
 
         if ($transactionHashFromRazorpay !== $transactionHash) {
             fluent_cart_add_log(
@@ -337,7 +338,7 @@ class RazorpayConfirmations
 
         $method = Arr::get($chargeData, 'method', 'card');
         $billingInfo = [
-            'type'   => $method,
+            'payment_method'   => $method,
             'vendor' => 'razorpay',
         ];
 
@@ -393,6 +394,17 @@ class RazorpayConfirmations
         $subscription = Subscription::query()->where('id', $transaction->subscription_id)->first();
         if ($order->type === Status::ORDER_TYPE_RENEWAL) {
 
+            $razorpaySubscription = Arr::get($subscriptionUpdateData, 'vendor_response', []);
+            $paymentMethod = Arr::get($razorpaySubscription, 'payment_method', '');
+
+            if ($paymentMethod) {
+                $billingInfo['payment_method'] = $paymentMethod;
+                if ($paymentMethod === 'card') { 
+                    $billingInfo['payment_method'] = 'card';
+                    $billingInfo['card_mandate_id'] = Arr::get($razorpaySubscription, 'card_mandate_id', '');
+                }
+            }
+        
             $subscriptionUpdateData = array_merge($subscriptionUpdateData, [
                 'current_payment_method' => 'razorpay',
                 'canceled_at' => null,
@@ -404,10 +416,24 @@ class RazorpayConfirmations
                 'subscription_args' => $subscriptionUpdateData
             ]);
 
+            $subscription->updateMeta('active_payment_method', $billingInfo);
+
         } else {
             if ($subscription) {
                 $subscription->fill($subscriptionUpdateData);
                 $subscription->save();
+
+                $razorpaySubscription = Arr::get($subscriptionUpdateData, 'vendor_response', []);
+                $paymentMethod = Arr::get($razorpaySubscription, 'payment_method', '');
+
+                if ($paymentMethod) {
+                    $billingInfo['payment_method'] = $paymentMethod;
+                    if ($paymentMethod === 'card') { 
+                        $billingInfo['payment_method'] = 'card';
+                        $billingInfo['card_mandate_id'] = Arr::get($razorpaySubscription, 'card_mandate_id', '');
+                    }
+                }
+
                 $subscription->updateMeta('active_payment_method', $billingInfo);
 
                 if (in_array($subscription->status, [Status::SUBSCRIPTION_ACTIVE, Status::SUBSCRIPTION_TRIALING])) {
