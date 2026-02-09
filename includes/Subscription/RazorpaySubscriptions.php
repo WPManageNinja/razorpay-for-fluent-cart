@@ -163,14 +163,38 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
             );
         }
 
-        // Fetch subscription from Razorpay
         $razorpaySubscription = RazorpayAPI::getRazorpayObject('subscriptions/' . $vendorSubscriptionId);
 
         if (is_wp_error($razorpaySubscription)) {
             return $razorpaySubscription;
         }
 
-        // Fetch invoices for this subscription
+        $razorpayStatus = Arr::get($razorpaySubscription, 'status');
+        $nextBillingDate = RazorpayHelper::getNextBillingDate($razorpaySubscription);
+        $fctSubStatus = RazorpayHelper::getFctStatusFromRazorpaySubscriptionStatus($razorpayStatus);
+
+        $subscriptionUpdateData = [
+            'status'          => $fctSubStatus,
+            'vendor_response' => $razorpaySubscription,
+            'next_billing_date' => $nextBillingDate,
+        ];
+
+        // Update next billing date
+        $nextChargeAt = Arr::get($razorpaySubscription, 'charge_at');
+        if ($nextChargeAt) {
+            $subscriptionUpdateData['next_billing_date'] = gmdate('Y-m-d H:i:s', $nextChargeAt);
+        }
+
+        $endedAt = Arr::get($razorpaySubscription, 'ended_at');
+        if ($endedAt && in_array($razorpayStatus, ['cancelled', 'completed'])) {
+            if ($razorpayStatus === 'cancelled') {
+                $subscriptionUpdateData['canceled_at'] = gmdate('Y-m-d H:i:s', $endedAt);
+            }
+            $subscriptionUpdateData['expire_at'] = gmdate('Y-m-d H:i:s', $endedAt);
+        }
+
+
+        // Sync invoices
         $invoices = RazorpayAPI::getRazorpayObject('invoices', [
             'subscription_id' => $vendorSubscriptionId,
         ]);
@@ -189,8 +213,11 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
         }
 
         $invoiceItems = Arr::get($invoices, 'items', []);
+  
+        array_reverse($invoiceItems);
 
-        // Process each invoice
+        $hasNewInvoice = false;
+
         foreach ($invoiceItems as $invoice) {
             $invoiceStatus = Arr::get($invoice, 'status');
             $paymentId = Arr::get($invoice, 'payment_id');
@@ -266,6 +293,8 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
                 ],
             ];
 
+            $hasNewInvoice = true;
+
             SubscriptionService::recordRenewalPayment($transactionData, $subscriptionModel, $subscriptionUpdateData);
 
             fluent_cart_add_log(
@@ -279,33 +308,10 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
             );
         }
 
-        // Update subscription status from Razorpay
-        $razorpayStatus = Arr::get($razorpaySubscription, 'status');
-        $nextBillingDate = RazorpayHelper::getNextBillingDate($razorpaySubscription);
-        $fctSubStatus = RazorpayHelper::getFctStatusFromRazorpaySubscriptionStatus($razorpayStatus);
-
-        $subscriptionUpdateData = [
-            'status'          => $fctSubStatus,
-            'vendor_response' => $razorpaySubscription,
-            'next_billing_date' => $nextBillingDate,
-        ];
-
-        // Update next billing date
-        $nextChargeAt = Arr::get($razorpaySubscription, 'charge_at');
-        if ($nextChargeAt) {
-            $subscriptionUpdateData['next_billing_date'] = gmdate('Y-m-d H:i:s', $nextChargeAt);
-        }
-
-        $endedAt = Arr::get($razorpaySubscription, 'ended_at');
-        if ($endedAt && in_array($razorpayStatus, ['cancelled', 'completed'])) {
-            if ($razorpayStatus === 'cancelled') {
-                $subscriptionUpdateData['canceled_at'] = gmdate('Y-m-d H:i:s', $endedAt);
-            }
-            $subscriptionUpdateData['expire_at'] = gmdate('Y-m-d H:i:s', $endedAt);
-        }
-
         // Sync subscription states
-        $subscriptionModel = SubscriptionService::syncSubscriptionStates($subscriptionModel, $subscriptionUpdateData);
+        if ($hasNewInvoice) {
+            $subscriptionModel = SubscriptionService::syncSubscriptionStates($subscriptionModel, $subscriptionUpdateData);
+        }
 
         return $subscriptionModel;
     }

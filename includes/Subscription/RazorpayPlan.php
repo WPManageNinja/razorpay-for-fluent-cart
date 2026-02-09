@@ -18,6 +18,7 @@ class RazorpayPlan
         $billingInterval = Arr::get($data, 'billing_interval');
         $variationId = Arr::get($data, 'variation_id', 0);
         $itemName = Arr::get($data, 'item_name', 'Subscription Plan');
+        $trialDays = Arr::get($data, 'trial_days', 0);
 
         if (!$amount || !$billingInterval) {
             return new \WP_Error(
@@ -34,9 +35,16 @@ class RazorpayPlan
         $period = $razorpayInterval['period'];
         $interval = $razorpayInterval['interval'];
 
-        $planId = self::generatePlanId($variationId, $amount, $period, $interval, $currency);
+        if ($period == 'daily' && $interval < 7) {
+            return new \WP_Error(
+                'razorpay_plan_error',
+                __('Subscription cannot be created with daily interval less than 7 days.', 'razorpay-for-fluent-cart')
+            );
+        }
 
-        $cachedPlan = self::getCachedPlan($planId);
+        $generatedPlanId = self::generatePlanId($variationId, $amount, $period, $interval, $currency, $trialDays);
+
+        $cachedPlan = self::getCachedPlan($generatedPlanId);
         if ($cachedPlan) {
             $existingPlan = RazorpayAPI::getRazorpayObject('plans/' . $cachedPlan);
             if (!is_wp_error($existingPlan) && Arr::get($existingPlan, 'id')) {
@@ -52,7 +60,7 @@ class RazorpayPlan
                 'currency' => $currency,
             ],
             'notes'    => [
-                'fluent_cart_plan_id' => $planId,
+                'fluent_cart_plan_id' => $generatedPlanId,
                 'variation_id'        => $variationId,
                 'billing_interval'    => $billingInterval,
             ],
@@ -64,20 +72,21 @@ class RazorpayPlan
             return $plan;
         }
 
-        self::cachePlan($planId, $plan['id']);
+        self::cachePlan($generatedPlanId, $plan['id']);
 
         return $plan;
     }
 
-    public static function generatePlanId($variationId, $amount, $period, $interval, $currency)
+    public static function generatePlanId($variationId, $amount, $period, $interval, $currency, $trialDays = 0)
     {
         return sprintf(
-            'fct_razorpay_%d_%d_%s_%d_%s',
+            'fct_razorpay_%d_%d_%s_%d_%s_%d',
             $variationId,
             $amount,
             $period,
             $interval,
-            strtolower($currency)
+            strtolower($currency),
+            $trialDays ?? 0
         );
     }
 
@@ -124,15 +133,22 @@ class RazorpayPlan
 
     public static function getIntervalInSeconds($billingInterval)
     {
+        // Define time constants if not already defined
+        if (!defined('DAY_IN_SECONDS'))   define('DAY_IN_SECONDS', 86400);
+        if (!defined('WEEK_IN_SECONDS'))  define('WEEK_IN_SECONDS', 604800);
+        if (!defined('YEAR_IN_SECONDS'))  define('YEAR_IN_SECONDS', 31536000);
+
+        $MONTH_IN_SECONDS = 30 * DAY_IN_SECONDS;
+
         $intervals = [
             'daily'       => DAY_IN_SECONDS,
             'weekly'      => WEEK_IN_SECONDS,
-            'monthly'     => 30 * DAY_IN_SECONDS,
+            'monthly'     => $MONTH_IN_SECONDS,
             'quarterly'   => 90 * DAY_IN_SECONDS,
             'half_yearly' => 182 * DAY_IN_SECONDS,
             'yearly'      => YEAR_IN_SECONDS,
         ];
 
-        return $intervals[$billingInterval] ?? MONTH_IN_SECONDS;
+        return isset($intervals[$billingInterval]) ? $intervals[$billingInterval] : $MONTH_IN_SECONDS;
     }
 }

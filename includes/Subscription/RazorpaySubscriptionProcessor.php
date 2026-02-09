@@ -78,15 +78,24 @@ class RazorpaySubscriptionProcessor
             'billing_interval' => $billingInterval,
             'variation_id'     => $subscription->variation_id,
             'item_name'        => $subscription->item_name,
+            'trial_days'       => $trialDays,
         ]);
 
         if (is_wp_error($plan)) {
             return $plan;
         }
 
+        // Build notify_info with phone if available
+        $notifyInfo = ['notify_email' => $fcCustomer->email];
+        if (!empty($fcCustomer->phone)) {
+            $notifyInfo['notify_phone'] = $fcCustomer->phone;
+        }
+
         $subscriptionData = [
             'plan_id'     => $plan['id'],
             'customer_id' => $razorpayCustomer['id'],
+            'customer_notify' => 1,  // Enforce card saving - disable "Skip saving card" option
+            'notify_info' => $notifyInfo,
             'notes'       => [
                 'fluent_cart_order_id'        => $order->id,
                 'fluent_cart_subscription_hash' => $subscription->uuid,
@@ -233,15 +242,24 @@ class RazorpaySubscriptionProcessor
             'billing_interval' => $billingInterval,
             'variation_id'     => $subscription->variation_id,
             'item_name'        => $subscription->item_name,
+            'trial_days'       => $reactivationTrialDays,
         ]);
 
         if (is_wp_error($plan)) {
             return $plan;
         }
 
+        // Build notify_info with phone if available
+        $notifyInfo = ['notify_email' => $fcCustomer->email];
+        if (!empty($fcCustomer->phone)) {
+            $notifyInfo['notify_phone'] = $fcCustomer->phone;
+        }
+
         $subscriptionData = [
             'plan_id'     => $plan['id'],
             'customer_id' => $razorpayCustomer['id'],
+            'customer_notify' => 1,  // Enforce card saving - disable "Skip saving card" option
+            'notify_info' => $notifyInfo,
             'notes'       => [
                 'fluent_cart_order_id'        => $order->id,
                 'fluent_cart_subscription_hash' => $subscription->uuid,
