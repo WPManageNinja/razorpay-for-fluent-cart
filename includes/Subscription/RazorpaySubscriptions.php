@@ -176,13 +176,10 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
         $subscriptionUpdateData = [
             'status'          => $fctSubStatus,
             'vendor_response' => $razorpaySubscription,
-            'next_billing_date' => $nextBillingDate,
         ];
 
-        // Update next billing date
-        $nextChargeAt = Arr::get($razorpaySubscription, 'charge_at');
-        if ($nextChargeAt) {
-            $subscriptionUpdateData['next_billing_date'] = gmdate('Y-m-d H:i:s', $nextChargeAt);
+        if ($nextBillingDate) {
+            $subscriptionUpdateData['next_billing_date'] = $nextBillingDate;
         }
 
         $endedAt = Arr::get($razorpaySubscription, 'ended_at');
