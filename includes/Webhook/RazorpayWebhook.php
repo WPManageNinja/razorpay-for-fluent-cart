@@ -8,9 +8,11 @@ use FluentCart\App\Models\Order;
 use FluentCart\App\Models\OrderTransaction;
 use FluentCart\App\Models\Subscription;
 use FluentCart\App\Events\Order\OrderRefund;
+use FluentCart\App\Events\Order\OrderPaymentFailed;
 use FluentCart\App\Events\Subscription\SubscriptionActivated;
 use FluentCart\App\Modules\Subscriptions\Services\SubscriptionService;
 use FluentCart\Framework\Support\Arr;
+use FluentCart\App\Services\DateTime\DateTime;
 use RazorpayFluentCart\API\RazorpayAPI;
 use RazorpayFluentCart\Settings\RazorpaySettingsBase;
 use RazorpayFluentCart\Confirmations\RazorpayConfirmations;
@@ -153,9 +155,11 @@ class RazorpayWebhook
 
         $transaction = $this->findTransactionByPayment($razorpayPayment, $razorpaySubscriptionId);
 
+        if (!$transaction) {
+            $this->sendResponse(200, 'Payment not found');
+        }
 
-        // Check if already processed
-        if (!$transaction || $transaction->status == Status::TRANSACTION_SUCCEEDED) {
+        if ($transaction->status == Status::TRANSACTION_SUCCEEDED) {
             $this->sendResponse(200, 'Payment already confirmed');
         }
 
@@ -195,11 +199,14 @@ class RazorpayWebhook
             }
         }
 
-        // Find transaction
         $transaction = $this->findTransactionByPayment($razorpayPayment, $razorpaySubscriptionId);
 
         if (!$transaction) {
             $this->sendResponse(404, 'Transaction not found');
+        }
+
+        if ($transaction->status == Status::TRANSACTION_SUCCEEDED) {
+            $this->sendResponse(200, 'Payment already confirmed');
         }
 
         // Auto-capture the payment
@@ -250,6 +257,7 @@ class RazorpayWebhook
     {
         $razorpayPayment = Arr::get($data, 'payload.payment.entity');
         $paymentId = Arr::get($razorpayPayment, 'id');
+        $order = Arr::get($data, 'order');
 
         if (!$paymentId) {
             $this->sendResponse(400, 'Payment ID not found');
@@ -272,6 +280,8 @@ class RazorpayWebhook
             $this->sendResponse(404, 'Transaction not found');
         }
 
+        $oldStatus = $transaction->status;
+
         // Update transaction status to failed
         $transaction->update([
             'status' => Status::TRANSACTION_FAILED,
@@ -290,6 +300,8 @@ class RazorpayWebhook
                 'module_id'   => $transaction->order_id,
             ]
         );
+
+        (new OrderPaymentFailed($order, $transaction, $oldStatus, Status::TRANSACTION_FAILED))->dispatch();
 
         $this->sendResponse(200, 'Payment failure processed');
     }
@@ -378,21 +390,8 @@ class RazorpayWebhook
 
     private function findTransactionByPayment($razorpayPayment, $razorpaySubscriptionId = null)
     {
-        $orderId = Arr::get($razorpayPayment, 'order_id');
         $paymentId = Arr::get($razorpayPayment, 'id');
         $notes = Arr::get($razorpayPayment, 'notes', []);
-
-        // Try by Razorpay order_id first (most common for subscriptions)
-        if ($orderId) {
-            $transaction = OrderTransaction::query()
-                ->where('vendor_charge_id', $orderId)
-                ->where('payment_method', 'razorpay')
-                ->first();
-
-            if ($transaction) {
-                return $transaction;
-            }
-        }
 
         // Try by payment_id
         if ($paymentId) {
@@ -407,35 +406,11 @@ class RazorpayWebhook
         }
 
         // Try by transaction hash from notes
-        $transactionHash = Arr::get($notes, 'transaction_id');
+        $transactionHash = Arr::get($notes, 'transaction_hash');
         if ($transactionHash) {
             $transaction = OrderTransaction::query()
                 ->where('uuid', $transactionHash)
                 ->where('payment_method', 'razorpay')
-                ->first();
-
-            if ($transaction) {
-                return $transaction;
-            }
-        }
-
-        // For invoice.paid webhook - try to find by subscription_id
-        // This handles initial subscription payment where notes might be empty
-        if ($razorpaySubscriptionId) {
-            $transaction = OrderTransaction::query()
-                ->where('vendor_charge_id', $razorpaySubscriptionId)
-                ->where('payment_method', 'razorpay')
-                ->first();
-
-            if ($transaction) {
-                return $transaction;
-            }
-
-            // Also try via subscription meta
-            $transaction = OrderTransaction::query()
-                ->where('payment_method', 'razorpay')
-                ->whereRaw("JSON_EXTRACT(meta, '$.razorpay_subscription_id') = ?", [$razorpaySubscriptionId])
-                ->orderBy('id', 'desc')
                 ->first();
 
             if ($transaction) {
@@ -513,13 +488,32 @@ class RazorpayWebhook
             $this->sendResponse(200, 'Subscription already authenticated');
         }
 
+        $oldStatus = $subscription->status;
         // Update subscription status - could be trialing if trial period exists
         $status = Status::SUBSCRIPTION_AUTHENTICATED;
 
-        $subscription->update([
-            'status'          => $status,
-            'vendor_response' => $razorpaySubscription,
-        ]);
+        $startAt = DateTime::anyTimeToGmt(Arr::get($razorpaySubscription, 'start_at'));
+        $now = DateTime::gmtNow();
+
+        if ($startAt > $now) {
+            $status = Status::SUBSCRIPTION_TRIALING;
+        }
+
+        $updateData = [
+            'status' => $status,
+            'vendor_response' => $razorpaySubscription
+        ];
+
+
+        if ($order->type == Status::ORDER_TYPE_RENEWAL) {
+            $updateData['canceled_at'] = null;
+            $subscription->update($updateData);
+        } else {
+            $subscription->update($updateData);
+            if ($oldStatus != $subscription->status && in_array($subscription->status, [Status::SUBSCRIPTION_ACTIVE, Status::SUBSCRIPTION_TRIALING, Status::SUBSCRIPTION_AUTHENTICATED, Status::SUBSCRIPTION_CREATED])) {
+                (new SubscriptionActivated($subscription, $order, $order->customer))->dispatch();
+            }
+        }
 
         $activePaymentMethod = $subscription->getMeta('active_payment_method', []);
 
@@ -585,10 +579,10 @@ class RazorpayWebhook
 
         if ($order->type == Status::ORDER_TYPE_RENEWAL) {
             $updateData['canceled_at'] = null;
+            $subscription->update($updateData);
         } else {
             $subscription->update($updateData);
-
-            if ($oldStatus != $subscription->status && in_array($subscription->status, [Status::SUBSCRIPTION_ACTIVE, Status::SUBSCRIPTION_TRIALING])) {
+            if ($oldStatus != $subscription->status && in_array($subscription->status, [Status::SUBSCRIPTION_ACTIVE, Status::SUBSCRIPTION_TRIALING, Status::SUBSCRIPTION_AUTHENTICATED, Status::SUBSCRIPTION_CREATED])) {
                 (new SubscriptionActivated($subscription, $order, $order->customer))->dispatch();
             }
         }

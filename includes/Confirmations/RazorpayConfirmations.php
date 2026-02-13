@@ -96,36 +96,44 @@ class RazorpayConfirmations
         $captured = Arr::get($razorpayPayment, 'captured', false);
 
         if ($razorpayPaymentStatus === 'authorized' && !$captured) {
-            $captureAmount = Arr::get($razorpayPayment, 'amount');
-            $currency = Arr::get($razorpayPayment, 'currency', 'INR');
+            $shouldAutoCapture = apply_filters('razorpay_fc/should_auto_capture_payment', true);
+            if ($shouldAutoCapture) {
+                $captureAmount = Arr::get($razorpayPayment, 'amount');
+                $currency = Arr::get($razorpayPayment, 'currency', 'INR');
+    
+                $captureData = [
+                    'amount' => intval($captureAmount),
+                    'currency' => strtoupper($currency)
+                ];
+    
+                $capturedPayment = RazorpayAPI::createRazorpayObject('payments/' . $paymentId . '/capture', $captureData);
 
-            $captureData = [
-                'amount' => intval($captureAmount),
-                'currency' => strtoupper($currency)
-            ];
+                if (is_wp_error($capturedPayment)) {
+                    fluent_cart_add_log(
+                        'Razorpay Confirmation',
+                        'Failed to capture payment: ' . $capturedPayment->get_error_message(),
+                        'error',
+                        [
+                            'module_name' => 'order',
+                            'module_id'   => $transactionModel->order_id,
+                        ]
+                    );
+    
+                   $this->confirmationFailed(400);
+                }
 
-            $capturedPayment = RazorpayAPI::createRazorpayObject('payments/' . $paymentId . '/capture', $captureData);
-
-            if (is_wp_error($capturedPayment)) {
-                fluent_cart_add_log(
-                    'Razorpay Confirmation',
-                    'Failed to capture payment: ' . $capturedPayment->get_error_message(),
-                    'error',
-                    [
-                        'module_name' => 'order',
-                        'module_id'   => $transactionModel->order_id,
-                    ]
-                );
-
-               $this->confirmationFailed(400);
+                $razorpayPayment = $capturedPayment;
+                $razorpayPaymentStatus = Arr::get($razorpayPayment, 'status');
+    
             }
-
-            $razorpayPayment = $capturedPayment;
-            $razorpayPaymentStatus = Arr::get($razorpayPayment, 'status');
+           
         }
 
         // Only accept captured/paid status - not just authorized
-        if ($razorpayPaymentStatus === 'paid' || $razorpayPaymentStatus === 'captured') {
+        $isAuthorizationIsASuccessState = apply_filters('razorpay_fc/is_authorization_is_a_success_state', true, [
+            'razorpay_payment' => $razorpayPayment,
+        ]);
+        if ($razorpayPaymentStatus === 'paid' || $razorpayPaymentStatus === 'captured' || $isAuthorizationIsASuccessState) {
             $this->confirmPaymentSuccessByCharge($transactionModel, $razorpayPayment);
             wp_send_json_success([
                 'message' => __('Payment successful', 'razorpay-for-fluent-cart'),

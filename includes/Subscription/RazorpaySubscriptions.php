@@ -270,6 +270,10 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
                 ->first();
 
             if ($existingTransaction) {
+                $existingTransaction->update([
+                    'vendor_charge_id' => $paymentId,
+                    'status' => Status::TRANSACTION_SUCCEEDED
+                ]);
                 continue;
             }
 

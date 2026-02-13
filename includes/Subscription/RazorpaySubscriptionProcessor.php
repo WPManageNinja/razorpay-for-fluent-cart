@@ -147,14 +147,18 @@ class RazorpaySubscriptionProcessor
             // For unlimited subscriptions (bill_times = 0), set appropriate total_count
             // Razorpay supports max 100 years, but cycles depend on billing interval
             $unlimitedCounts = [
-                'daily'       => 3650,  // ~10 years
-                'weekly'      => 520,   // ~10 years
-                'monthly'     => 120,   // ~10 years
-                'quarterly'   => 40,    // ~10 years
-                'half_yearly' => 20,    // ~10 years
-                'yearly'      => 100,   // 100 years (max supported by Razorpay)
+                'weekly'      => 1560,   // ~30 years
+                'monthly'     => 360,   // ~30 years
+                'quarterly'   => 120,    // ~30 years
+                'half_yearly' => 60,    // ~30 years
+                'yearly'      => 30,   // 30 years (max supported by Razorpay)
             ];
-            $subscriptionData['total_count'] = $unlimitedCounts[$billingInterval] ?? 120;
+
+            $totalCount = apply_filters('fc_razorpay/total_count_for_infinite_subscription', $unlimitedCounts[$billingInterval], [
+                'subscription' => $subscription
+            ]);
+
+            $subscriptionData['total_count'] = $totalCount;
         }
 
         $razorpaySubscription = RazorpayAPI::createRazorpayObject('subscriptions', $subscriptionData);
