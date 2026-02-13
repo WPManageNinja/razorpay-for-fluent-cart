@@ -317,7 +317,7 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
             SubscriptionService::recordRenewalPayment($transactionData, $subscriptionModel, $subscriptionUpdateData);
 
             fluent_cart_add_log(
-                'Razorpay Subscription Sync',
+                'Razorpay Subscription Synced',
                 sprintf('Synced renewal payment: %s', $paymentId),
                 'info',
                 [

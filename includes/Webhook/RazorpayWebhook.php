@@ -31,7 +31,7 @@ class RazorpayWebhook
         // Subscription webhook event handlers
         add_action('fluent_cart/payments/razorpay/webhook_subscription_authenticated', [$this, 'handleSubscriptionAuthenticated'], 10, 1);
         add_action('fluent_cart/payments/razorpay/webhook_subscription_activated', [$this, 'handleSubscriptionActivated'], 10, 1);
-        add_action('fluent_cart/payments/razorpay/webhook_subscription_charged', [$this, 'handleSubscriptionCharged'], 10, 1);
+        add_action('fluent_cart/payments/razorpay/webhook_invoice_paid', [$this, 'handleInvoicePaid'], 10, 1); // Subscription renewal payments
         add_action('fluent_cart/payments/razorpay/webhook_subscription_cancelled', [$this, 'handleSubscriptionCancelled'], 10, 1);
         add_action('fluent_cart/payments/razorpay/webhook_subscription_paused', [$this, 'handleSubscriptionPaused'], 10, 1);
         add_action('fluent_cart/payments/razorpay/webhook_subscription_resumed', [$this, 'handleSubscriptionResumed'], 10, 1);
@@ -76,8 +76,8 @@ class RazorpayWebhook
         }
 
 
-        // For subscription events, we may not have an order initially
-        $isSubscriptionEvent = strpos($event, 'subscription.') === 0;
+        // For subscription events and invoice.paid (subscription renewals), we may not have an order initially
+        $isSubscriptionEvent = strpos($event, 'subscription.') === 0 || $event === 'invoice.paid';
         $order = $this->getFluentCartOrder($data);
 
         if (!$order && !$isSubscriptionEvent) {
@@ -141,7 +141,17 @@ class RazorpayWebhook
             $this->sendResponse(400, 'Payment ID not found');
         }
 
-        $transaction = $this->findTransactionByPayment($razorpayPayment);
+        // Check if this is from an invoice (subscription payment)
+        $invoiceId = Arr::get($razorpayPayment, 'invoice_id');
+        $razorpaySubscriptionId = null;
+        if ($invoiceId) {
+            $invoice = RazorpayAPI::getRazorpayObject('invoices/' . $invoiceId);
+            if (!is_wp_error($invoice)) {
+                $razorpaySubscriptionId = Arr::get($invoice, 'subscription_id');
+            }
+        }
+
+        $transaction = $this->findTransactionByPayment($razorpayPayment, $razorpaySubscriptionId);
 
 
         // Check if already processed
@@ -175,8 +185,18 @@ class RazorpayWebhook
             $this->sendResponse(400, 'Payment ID not found');
         }
 
+        // Check if this is from an invoice (subscription payment)
+        $invoiceId = Arr::get($razorpayPayment, 'invoice_id');
+        $razorpaySubscriptionId = null;
+        if ($invoiceId) {
+            $invoice = RazorpayAPI::getRazorpayObject('invoices/' . $invoiceId);
+            if (!is_wp_error($invoice)) {
+                $razorpaySubscriptionId = Arr::get($invoice, 'subscription_id');
+            }
+        }
+
         // Find transaction
-        $transaction = $this->findTransactionByPayment($razorpayPayment);
+        $transaction = $this->findTransactionByPayment($razorpayPayment, $razorpaySubscriptionId);
 
         if (!$transaction) {
             $this->sendResponse(404, 'Transaction not found');
@@ -235,8 +255,18 @@ class RazorpayWebhook
             $this->sendResponse(400, 'Payment ID not found');
         }
 
+        // Check if this is from an invoice (subscription payment)
+        $invoiceId = Arr::get($razorpayPayment, 'invoice_id');
+        $razorpaySubscriptionId = null;
+        if ($invoiceId) {
+            $invoice = RazorpayAPI::getRazorpayObject('invoices/' . $invoiceId);
+            if (!is_wp_error($invoice)) {
+                $razorpaySubscriptionId = Arr::get($invoice, 'subscription_id');
+            }
+        }
+
         // Find transaction
-        $transaction = $this->findTransactionByPayment($razorpayPayment);
+        $transaction = $this->findTransactionByPayment($razorpayPayment, $razorpaySubscriptionId);
 
         if (!$transaction) {
             $this->sendResponse(404, 'Transaction not found');
@@ -346,12 +376,13 @@ class RazorpayWebhook
         $this->sendResponse(200, 'Refund processed successfully');
     }
 
-    private function findTransactionByPayment($razorpayPayment)
+    private function findTransactionByPayment($razorpayPayment, $razorpaySubscriptionId = null)
     {
         $orderId = Arr::get($razorpayPayment, 'order_id');
         $paymentId = Arr::get($razorpayPayment, 'id');
         $notes = Arr::get($razorpayPayment, 'notes', []);
 
+        // Try by Razorpay order_id first (most common for subscriptions)
         if ($orderId) {
             $transaction = OrderTransaction::query()
                 ->where('vendor_charge_id', $orderId)
@@ -363,6 +394,7 @@ class RazorpayWebhook
             }
         }
 
+        // Try by payment_id
         if ($paymentId) {
             $transaction = OrderTransaction::query()
                 ->where('vendor_charge_id', $paymentId)
@@ -374,11 +406,36 @@ class RazorpayWebhook
             }
         }
 
+        // Try by transaction hash from notes
         $transactionHash = Arr::get($notes, 'transaction_id');
         if ($transactionHash) {
             $transaction = OrderTransaction::query()
                 ->where('uuid', $transactionHash)
                 ->where('payment_method', 'razorpay')
+                ->first();
+
+            if ($transaction) {
+                return $transaction;
+            }
+        }
+
+        // For invoice.paid webhook - try to find by subscription_id
+        // This handles initial subscription payment where notes might be empty
+        if ($razorpaySubscriptionId) {
+            $transaction = OrderTransaction::query()
+                ->where('vendor_charge_id', $razorpaySubscriptionId)
+                ->where('payment_method', 'razorpay')
+                ->first();
+
+            if ($transaction) {
+                return $transaction;
+            }
+
+            // Also try via subscription meta
+            $transaction = OrderTransaction::query()
+                ->where('payment_method', 'razorpay')
+                ->whereRaw("JSON_EXTRACT(meta, '$.razorpay_subscription_id') = ?", [$razorpaySubscriptionId])
+                ->orderBy('id', 'desc')
                 ->first();
 
             if ($transaction) {
@@ -563,8 +620,55 @@ class RazorpayWebhook
     }
 
     /**
+     * Handle invoice.paid webhook
+     * This is the correct webhook for subscription renewal payments
+     * Razorpay sends invoice.paid (not subscription.charged) for recurring payments
+     *
+     * @param array $data
+     */
+    public function handleInvoicePaid($data)
+    {
+        $razorpayInvoice = Arr::get($data, 'payload.invoice.entity');
+        $razorpayPayment = Arr::get($data, 'payload.payment.entity');
+        $razorpaySubscriptionId = Arr::get($razorpayInvoice, 'subscription_id');
+        $paymentId = Arr::get($razorpayPayment, 'id');
+
+        if (!$razorpaySubscriptionId) {
+            // Not a subscription invoice, might be a one-time invoice
+            $this->sendResponse(200, 'Not a subscription invoice');
+        }
+
+        $subscription = $this->findSubscriptionByVendorId($razorpaySubscriptionId);
+
+        if (!$subscription) {
+            fluent_cart_add_log(
+                'Razorpay Webhook - Invoice Paid',
+                sprintf('Subscription not found for Razorpay subscription: %s', $razorpaySubscriptionId),
+                'warning'
+            );
+            $this->sendResponse(200, 'Subscription not found in FluentCart');
+        }
+
+        $subscription->reSyncFromRemote();
+        
+        fluent_cart_add_log(
+            'Razorpay Webhook - Invoice Paid',
+            sprintf('Renewal payment recorded for subscription %d. Payment: %s, Invoice: %s',
+                $subscription->id, $paymentId, Arr::get($razorpayInvoice, 'id')),
+            'info',
+            [
+                'module_name' => 'subscription',
+                'module_id'   => $subscription->id,
+            ]
+        );
+
+        $this->sendResponse(200, 'Renewal payment recorded');
+    }
+
+    /**
      * Handle subscription.charged webhook
-     * Recurring payment successful (RENEWAL)
+     * DEPRECATED: Razorpay doesn't send this for subscriptions, use invoice.paid instead
+     * Keeping for backwards compatibility only
      *
      * @param array $data
      */
@@ -860,7 +964,7 @@ class RazorpayWebhook
 
     /**
      * Get FluentCart order from webhook data
-     * Extended to also look in subscription notes
+     * Extended to also look in subscription notes and invoice subscription_id
      *
      * @param array $data
      *
@@ -895,6 +999,17 @@ class RazorpayWebhook
 
             if ($orderHash) {
                 $order = Order::query()->where('uuid', $orderHash)->first();
+            }
+        }
+
+        // For invoice.paid webhook - use subscription_id from invoice entity
+        if (!$order) {
+            $razorpaySubscriptionId = Arr::get($data, 'payload.invoice.entity.subscription_id');
+            if ($razorpaySubscriptionId) {
+                $subscription = $this->findSubscriptionByVendorId($razorpaySubscriptionId);
+                if ($subscription) {
+                    $order = Order::query()->find($subscription->parent_order_id);
+                }
             }
         }
 
