@@ -173,6 +173,16 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
         $nextBillingDate = RazorpayHelper::getNextBillingDate($razorpaySubscription);
         $fctSubStatus = RazorpayHelper::getFctStatusFromRazorpaySubscriptionStatus($razorpayStatus);
 
+        if ($fctSubStatus == Status::SUBSCRIPTION_AUTHENTICATED) {
+            $startAt = DateTime::anyTimeToGmt(Arr::get($razorpaySubscription, 'start_at'));
+            $now = DateTime::gmtNow();
+
+            if ($startAt > $now) {
+                $fctSubStatus = Status::SUBSCRIPTION_TRIALING;
+            }
+        } 
+
+
         $subscriptionUpdateData = [
             'status'          => $fctSubStatus,
             'vendor_response' => $razorpaySubscription,

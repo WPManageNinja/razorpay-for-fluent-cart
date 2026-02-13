@@ -7,6 +7,7 @@ use FluentCart\App\Helpers\StatusHelper;
 use FluentCart\App\Models\Order;
 use FluentCart\App\Models\OrderTransaction;
 use FluentCart\App\Models\Subscription;
+use FluentCart\App\Services\DateTime\DateTime;
 use FluentCart\App\Modules\Subscriptions\Services\SubscriptionService;
 use FluentCart\App\Events\Subscription\SubscriptionActivated;
 use FluentCart\Framework\Support\Arr;
@@ -88,10 +89,7 @@ class RazorpayConfirmations
         }
 
         if ($transactionModel->status === Status::TRANSACTION_SUCCEEDED) {
-            wp_send_json_success([
-                'message'      => __('Payment already confirmed', 'razorpay-for-fluent-cart'),
-                'redirect_url' => $transactionModel->getReceiptPageUrl()
-            ]);
+            $this->confirmationFailed(400);
         }
 
         $razorpayPaymentStatus = Arr::get($razorpayPayment, 'status');
@@ -166,12 +164,9 @@ class RazorpayConfirmations
             $this->confirmationFailed(404);
         }
 
-        // if ($transactionModel->status === Status::TRANSACTION_SUCCEEDED) {
-        //     wp_send_json_success([
-        //         'message'      => __('Payment already confirmed', 'razorpay-for-fluent-cart'),
-        //         'redirect_url' => $transactionModel->getReceiptPageUrl()
-        //     ]);
-        // }
+        if ($transactionModel->status === Status::TRANSACTION_SUCCEEDED) {
+            $this->confirmationFailed(400);
+        }
 
         $order = Order::query()->where('id', $transactionModel->order_id)->first();
 
@@ -252,6 +247,17 @@ class RazorpayConfirmations
 
             $razorpaySubStatus = Arr::get($razorpaySubscription, 'status');
             $fctStatus = RazorpayHelper::getFctStatusFromRazorpaySubscriptionStatus($razorpaySubStatus);
+
+            if ($fctStatus == Status::SUBSCRIPTION_AUTHENTICATED) {
+                $startAt = DateTime::anyTimeToGmt(Arr::get($razorpaySubscription, 'start_at'));
+                $now = DateTime::gmtNow();
+
+                if ($startAt > $now) {
+                    $fctStatus = Status::SUBSCRIPTION_TRIALING;
+                }
+            } 
+
+         
             
             $subscriptionUpdateData['status'] = $fctStatus;
 

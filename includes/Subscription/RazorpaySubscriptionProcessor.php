@@ -109,7 +109,7 @@ class RazorpaySubscriptionProcessor
         $useAddon = false;
 
         if ($firstPayment == 0) {
-            // Scenario 4 & 5: Real trial or 100% coupon
+            // Scenario 4 & 5: Real trial or 100% coupon / upgrade
             if ($trialDays > 0) {
                 $subscriptionData['start_at'] = time() + ($trialDays * DAY_IN_SECONDS);
             }
