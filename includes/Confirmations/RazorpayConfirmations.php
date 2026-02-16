@@ -89,7 +89,10 @@ class RazorpayConfirmations
         }
 
         if ($transactionModel->status === Status::TRANSACTION_SUCCEEDED) {
-            $this->confirmationFailed(400);
+            wp_send_json_success([
+                'message' => __('Payment successful', 'razorpay-for-fluent-cart'),
+                'redirect_url' => $transactionModel->getReceiptPageUrl()
+            ]);
         }
 
         $razorpayPaymentStatus = Arr::get($razorpayPayment, 'status');
@@ -173,7 +176,10 @@ class RazorpayConfirmations
         }
 
         if ($transactionModel->status === Status::TRANSACTION_SUCCEEDED) {
-            $this->confirmationFailed(400);
+            wp_send_json_success([
+                'message' => __('Payment successful', 'razorpay-for-fluent-cart'),
+                'redirect_url' => $transactionModel->getReceiptPageUrl()
+            ]);
         }
 
         $order = Order::query()->where('id', $transactionModel->order_id)->first();

@@ -163,9 +163,6 @@ class RazorpayWebhook
             $this->sendResponse(200, 'Payment already confirmed');
         }
 
-        // Confirm the payment
-        (new RazorpayConfirmations())->confirmPaymentSuccessByCharge($transaction, $razorpayPayment);
-
         fluent_cart_add_log(
             __('Razorpay Payment Captured (Webhook)', 'razorpay-for-fluent-cart'),
             sprintf('Payment ID: %s captured successfully', $paymentId),
@@ -175,6 +172,9 @@ class RazorpayWebhook
                 'module_id'   => $transaction->order_id,
             ]
         );
+
+        // Confirm the payment
+        (new RazorpayConfirmations())->confirmPaymentSuccessByCharge($transaction, $razorpayPayment);
 
         $this->sendResponse(200, 'Payment captured successfully');
     }
@@ -218,6 +218,16 @@ class RazorpayWebhook
             'currency' => strtoupper($currency)
         ];
 
+        fluent_cart_add_log(
+            __('Razorpay Payment Authorized (Webhook)', 'razorpay-for-fluent-cart'),
+            sprintf('Payment ID: %s Authorized', $paymentId),
+            'info',
+            [
+                'module_name' => 'order',
+                'module_id'   => $transaction->order_id,
+            ]
+        );
+
         // Auto-capture the payment
         $shouldAutoCapture = apply_filters('razorpay_fc/should_auto_capture_payment', true);
         if ($shouldAutoCapture) {
@@ -226,6 +236,15 @@ class RazorpayWebhook
             if (is_wp_error($razorpayPayment)) {
                 $this->sendResponse(500, 'Failed to capture payment');
             } else {
+                fluent_cart_add_log(
+                    __('Razorpay Payment captured (Webhook)', 'razorpay-for-fluent-cart'),
+                    sprintf('Payment ID: %s Captured', $paymentId),
+                    'info',
+                    [
+                        'module_name' => 'order',
+                        'module_id'   => $transaction->order_id,
+                    ]
+                );
                   // Process the captured payment
                   (new RazorpayConfirmations())->confirmPaymentSuccessByCharge($transaction, $razorpayPayment);
 
@@ -372,18 +391,17 @@ class RazorpayWebhook
         $currentCreatedRefund = RazorpayRefund::createOrUpdateIpnRefund($refundData, $parentTransaction);
 
         if ($currentCreatedRefund && $currentCreatedRefund->wasRecentlyCreated) {
+            fluent_cart_add_log(
+                __('Razorpay Refund Processed (Webhook)', 'razorpay-for-fluent-cart'),
+                sprintf('Refund ID: %s processed successfully', $refundId),
+                'info',
+                [
+                    'module_name' => 'order',
+                    'module_id'   => $parentTransaction->order_id,
+                ]
+            );
             (new OrderRefund($order, $currentCreatedRefund))->dispatch();
         }
-
-        fluent_cart_add_log(
-            __('Razorpay Refund Processed (Webhook)', 'razorpay-for-fluent-cart'),
-            sprintf('Refund ID: %s processed successfully', $refundId),
-            'info',
-            [
-                'module_name' => 'order',
-                'module_id'   => $parentTransaction->order_id,
-            ]
-        );
 
         $this->sendResponse(200, 'Refund processed successfully');
     }
