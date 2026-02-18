@@ -370,27 +370,41 @@ class RazorpayConfirmations
 
         if ($method === 'card') {
             $card = Arr::get($chargeData, 'card', []);
-            $billingInfo['card'] = [
-                'last4'   => Arr::get($card, 'last4', ''),
+            $billingInfo['details'] = [
+                'method'  => 'card',
+                'last_4'   => Arr::get($card, 'last4', ''),
                 'brand'   => Arr::get($card, 'network', ''),
                 'type'    => Arr::get($card, 'type', ''),
             ];
         } elseif ($method === 'upi') {
-            $billingInfo['upi'] = [
-                'vpa' => Arr::get($chargeData, 'vpa', ''),
+            $billingInfo['details'] = [
+               'method'  => 'upi',
+               'upi' => Arr::get($chargeData, 'upi', ''),
             ];
         } elseif ($method === 'netbanking') {
-            $billingInfo['bank'] = Arr::get($chargeData, 'bank', '');
+            $billingInfo['details'] = [
+                'method'  => 'netbanking',
+                'bank' => Arr::get($chargeData, 'bank', ''),
+            ];
         } elseif ($method === 'wallet') {
-            $billingInfo['wallet'] = Arr::get($chargeData, 'wallet', '');
+            $billingInfo['details'] = [
+                'method'  => 'wallet',
+                'wallet' => Arr::get($chargeData, 'wallet', ''),
+            ];
         } elseif ($method == 'vpa') {
-            $billingInfo['vpa'] = Arr::get($chargeData, 'vpa', '');
+            $billingInfo['details'] = [
+                'method'  => 'vpa',
+                'vpa' => Arr::get($chargeData, 'vpa', ''),
+            ];
         } elseif ($method === 'bank') {
-            $billingInfo['bank'] = Arr::get($chargeData, 'bank', '');
+            $billingInfo['details'] = [
+                'method'  => 'bank',
+                 'bank' => Arr::get($chargeData, 'bank', ''),
+            ];
         }
 
-        $updateData['card_last_4'] = Arr::get($billingInfo, 'last4', '');
-        $updateData['card_brand'] = Arr::get($billingInfo, 'brand', '');
+        $updateData['card_last_4'] = Arr::get($billingInfo, 'details.last_4', '');
+        $updateData['card_brand'] = Arr::get($billingInfo, 'details.brand', '');
         $updateData['payment_method_type'] = $method;
         $updateData['meta'] = $billingInfo;
 
