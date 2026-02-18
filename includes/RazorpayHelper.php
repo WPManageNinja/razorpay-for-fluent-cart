@@ -119,7 +119,7 @@ class RazorpayHelper
         return $razorpayCustomer;
     }
 
-    public static function getNextBillingDate($razorpaySubscription)
+    public static function getNextBillingDate($razorpaySubscription, $subscriptionModel)
     {
         $currentEnd = Arr::get($razorpaySubscription, 'current_end');
         if ($currentEnd) {
@@ -132,6 +132,9 @@ class RazorpayHelper
             return gmdate('Y-m-d H:i:s', $chargeAt);
         }
 
-        return null;
+        // guess next billing date
+
+        return $subscriptionModel->guessNextBillingDate();
+
     }
 }

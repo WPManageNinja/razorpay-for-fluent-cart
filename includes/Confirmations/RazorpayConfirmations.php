@@ -275,7 +275,7 @@ class RazorpayConfirmations
             
             $subscriptionUpdateData['status'] = $fctStatus;
 
-            $nextBillingDate = RazorpayHelper::getNextBillingDate($razorpaySubscription);
+            $nextBillingDate = RazorpayHelper::getNextBillingDate($razorpaySubscription, $subscription);
             if ($nextBillingDate) {
                 $subscriptionUpdateData['next_billing_date'] = $nextBillingDate;
             }
@@ -316,7 +316,13 @@ class RazorpayConfirmations
      */
     public function confirmPaymentSuccessByCharge(OrderTransaction $transaction, $chargeData = [], $subscriptionUpdateData = [] )
     {
-        if (!$transaction || $transaction->status === Status::TRANSACTION_SUCCEEDED) {
+        if (!$transaction) {
+            return null;
+        }
+
+         // in race conditions between webhook and AJAX confirmation
+        $transaction = OrderTransaction::query()->where('id', $transaction->id)->first();
+        if ($transaction->status === Status::TRANSACTION_SUCCEEDED) {
             return null;
         }
 

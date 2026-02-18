@@ -584,7 +584,7 @@ class RazorpayWebhook
 
         $oldStatus = $subscription->status;
 
-        $nextBillingDate = RazorpayHelper::getNextBillingDate($razorpaySubscription);
+        $nextBillingDate = RazorpayHelper::getNextBillingDate($razorpaySubscription, $subscription);
 
         $updateData = [
             'status'          => Status::SUBSCRIPTION_ACTIVE,
@@ -735,7 +735,7 @@ class RazorpayWebhook
         ];
 
         // Calculate next billing date
-        $nextBillingDate = RazorpayHelper::getNextBillingDate($razorpaySubscription);
+        $nextBillingDate = RazorpayHelper::getNextBillingDate($razorpaySubscription, $subscription);
         $subscriptionUpdateData = [
             'status'          => Status::SUBSCRIPTION_ACTIVE,
             'vendor_response' => $razorpaySubscription,

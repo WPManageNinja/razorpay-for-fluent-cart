@@ -171,7 +171,7 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
         }
 
         $razorpayStatus = Arr::get($razorpaySubscription, 'status');
-        $nextBillingDate = RazorpayHelper::getNextBillingDate($razorpaySubscription);
+        $nextBillingDate = RazorpayHelper::getNextBillingDate($razorpaySubscription, $subscriptionModel);
         $fctSubStatus = RazorpayHelper::getFctStatusFromRazorpaySubscriptionStatus($razorpayStatus);
 
         if ($fctSubStatus == Status::SUBSCRIPTION_AUTHENTICATED) {
