@@ -140,7 +140,7 @@ class RazorpayConfirmations
         $isAuthorizationIsASuccessState = apply_filters('razorpay_fc/is_authorization_is_a_success_state', true, [
             'razorpay_payment' => $razorpayPayment,
         ]);
-        if ($razorpayPaymentStatus === 'paid' || $razorpayPaymentStatus === 'captured' || $isAuthorizationIsASuccessState) {
+        if ($razorpayPaymentStatus === 'paid' || $razorpayPaymentStatus === 'captured' || ($razorpayPaymentStatus === 'authorized' && $isAuthorizationIsASuccessState)) {
             $this->confirmPaymentSuccessByCharge($transactionModel, $razorpayPayment);
             wp_send_json_success([
                 'message' => __('Payment successful', 'razorpay-for-fluent-cart'),
@@ -237,6 +237,36 @@ class RazorpayConfirmations
             $this->confirmationFailed(400);
         }
 
+        $invoiceId = Arr::get($razorpayPayment, 'invoice_id', '');
+
+        // does this invoice corresponds to an invoice with subscription_id === $razorpaySubscriptionId
+        $invoice = RazorpayAPI::getRazorpayObject('invoices/' . $invoiceId);
+        if (is_wp_error($invoice)) {
+            fluent_cart_add_log(
+                'Razorpay Subscription Confirmation',
+                'Failed to fetch invoice: ' . $invoice->get_error_message(),
+                'error',
+                [
+                    'module_name' => 'order',
+                    'module_id'   => $order->id,
+                ]
+            );
+            $this->confirmationFailed(400);
+        }
+
+        if (Arr::get($invoice, 'subscription_id') !== $razorpaySubscriptionId) {
+            fluent_cart_add_log(
+                'Razorpay Subscription Confirmation',
+                sprintf('Invoice subscription mismatch. Invoice %s belongs to subscription %s, not %s', $invoiceId, Arr::get($invoice, 'subscription_id'), $razorpaySubscriptionId),
+                'error',
+                [
+                    'module_name' => 'order',
+                    'module_id'   => $order->id,
+                ]
+            );
+            $this->confirmationFailed(400);
+        }
+
         $razorpayPaymentStatus = Arr::get($razorpayPayment, 'status');
 
         // status 'refunded' happens when the payment is refunded after the initial payment is confirmed, case: first payment is 0, in case of renewal/reactivation payment or subscription with trial
@@ -258,6 +288,20 @@ class RazorpayConfirmations
             ->first();
 
         $subscriptionUpdateData = [];
+
+       if (!$subscription) {
+            fluent_cart_add_log(
+                'Razorpay Subscription Confirmation',
+                sprintf('Subscription not found for order %d', $order->id),
+                'error',
+                [
+                    'module_name' => 'order',
+                    'module_id'   => $order->id,
+                ]
+            );
+
+            $this->confirmationFailed(404);
+        }
 
         if ($subscription) {
             $subscriptionUpdateData['vendor_subscription_id'] = $razorpaySubscriptionId;
