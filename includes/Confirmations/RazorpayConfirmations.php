@@ -303,49 +303,48 @@ class RazorpayConfirmations
             $this->confirmationFailed(404);
         }
 
-        if ($subscription) {
-            $subscriptionUpdateData['vendor_subscription_id'] = $razorpaySubscriptionId;
+        $subscriptionUpdateData['vendor_subscription_id'] = $razorpaySubscriptionId;
 
-            $razorpaySubStatus = Arr::get($razorpaySubscription, 'status');
-            $fctStatus = RazorpayHelper::getFctStatusFromRazorpaySubscriptionStatus($razorpaySubStatus);
+        $razorpaySubStatus = Arr::get($razorpaySubscription, 'status');
+        $fctStatus = RazorpayHelper::getFctStatusFromRazorpaySubscriptionStatus($razorpaySubStatus);
 
-            if ($fctStatus == Status::SUBSCRIPTION_AUTHENTICATED) {
-                $startAt = DateTime::anyTimeToGmt(Arr::get($razorpaySubscription, 'start_at'));
-                $now = DateTime::gmtNow();
+        if ($fctStatus == Status::SUBSCRIPTION_AUTHENTICATED) {
+            $startAt = DateTime::anyTimeToGmt(Arr::get($razorpaySubscription, 'start_at'));
+            $now = DateTime::gmtNow();
 
-                if ($startAt > $now) {
-                    $fctStatus = Status::SUBSCRIPTION_TRIALING;
-                }
-            } 
-
-         
-            
-            $subscriptionUpdateData['status'] = $fctStatus;
-
-            $nextBillingDate = RazorpayHelper::getNextBillingDate($razorpaySubscription, $subscription);
-            if ($nextBillingDate) {
-                $subscriptionUpdateData['next_billing_date'] = $nextBillingDate;
+            if ($startAt > $now) {
+                $fctStatus = Status::SUBSCRIPTION_TRIALING;
             }
+        } 
 
-            $subscriptionUpdateData['vendor_response'] = $razorpaySubscription;
+        
+        
+        $subscriptionUpdateData['status'] = $fctStatus;
 
-            $this->confirmPaymentSuccessByCharge($transactionModel, $razorpayPayment, $subscriptionUpdateData);
-           
-            fluent_cart_add_log(
-                'Razorpay Subscription Confirmed',
-                sprintf(
-                    'Subscription %d confirmed. Razorpay Subscription: %s, Payment: %s',
-                    $subscription->id,
-                    $razorpaySubscriptionId,
-                    $paymentId
-                ),
-                'info',
-                [
-                    'module_name' => 'subscription',
-                    'module_id'   => $subscription->id,
-                ]
-            );
+        $nextBillingDate = RazorpayHelper::getNextBillingDate($razorpaySubscription, $subscription);
+        if ($nextBillingDate) {
+            $subscriptionUpdateData['next_billing_date'] = $nextBillingDate;
         }
+
+        $subscriptionUpdateData['vendor_response'] = $razorpaySubscription;
+
+        $this->confirmPaymentSuccessByCharge($transactionModel, $razorpayPayment, $subscriptionUpdateData);
+        
+        fluent_cart_add_log(
+            'Razorpay Subscription Confirmed',
+            sprintf(
+                'Subscription %d confirmed. Razorpay Subscription: %s, Payment: %s',
+                $subscription->id,
+                $razorpaySubscriptionId,
+                $paymentId
+            ),
+            'info',
+            [
+                'module_name' => 'subscription',
+                'module_id'   => $subscription->id,
+            ]
+        );
+        
 
         wp_send_json_success([
             'message'      => __('Subscription payment confirmed', 'razorpay-for-fluent-cart'),
