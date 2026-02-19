@@ -153,7 +153,7 @@ class RazorpayWebhook
             }
         }
 
-        $transaction = $this->findTransactionByPayment($razorpayPayment, $razorpaySubscriptionId);
+        $transaction = $this->findTransactionByPayment($razorpayPayment);
 
         if (!$transaction) {
             $this->sendResponse(200, 'Payment not found');
@@ -199,7 +199,7 @@ class RazorpayWebhook
             }
         }
 
-        $transaction = $this->findTransactionByPayment($razorpayPayment, $razorpaySubscriptionId);
+        $transaction = $this->findTransactionByPayment($razorpayPayment);
 
         if (!$transaction) {
             $this->sendResponse(404, 'Transaction not found');
@@ -293,7 +293,7 @@ class RazorpayWebhook
         }
 
         // Find transaction
-        $transaction = $this->findTransactionByPayment($razorpayPayment, $razorpaySubscriptionId);
+        $transaction = $this->findTransactionByPayment($razorpayPayment);
 
         if (!$transaction) {
             $this->sendResponse(404, 'Transaction not found');
@@ -406,7 +406,7 @@ class RazorpayWebhook
         $this->sendResponse(200, 'Refund processed successfully');
     }
 
-    private function findTransactionByPayment($razorpayPayment, $razorpaySubscriptionId = null)
+    private function findTransactionByPayment($razorpayPayment)
     {
         $paymentId = Arr::get($razorpayPayment, 'id');
         $notes = Arr::get($razorpayPayment, 'notes', []);

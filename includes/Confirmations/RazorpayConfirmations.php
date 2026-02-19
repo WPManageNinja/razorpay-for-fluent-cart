@@ -49,6 +49,10 @@ class RazorpayConfirmations
         $razorpaySubscriptionId = sanitize_text_field(wp_unslash(Arr::get($_REQUEST, 'razorpay_subscription_id', '')));
 
         if ($isSubscription) {
+            if (!$razorpaySubscriptionId) {
+                $this->confirmationFailed(400);
+            };
+
             $this->confirmSubscriptionPayment($transactionHash, $paymentId, $razorpaySubscriptionId);
             return;
         }
@@ -204,7 +208,6 @@ class RazorpayConfirmations
 
         $notes = Arr::get($razorpaySubscription, 'notes', []);
         $transactionHashFromRazorpay = Arr::get($notes, 'transaction_hash', '');
-        $subscriptionPaymentMethod = Arr::get($razorpaySubscription, 'payment_method', '');
 
         if ($transactionHashFromRazorpay !== $transactionHash) {
             fluent_cart_add_log(

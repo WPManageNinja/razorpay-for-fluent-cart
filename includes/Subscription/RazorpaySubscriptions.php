@@ -234,7 +234,7 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
 
         $invoiceItems = Arr::get($invoices, 'items', []);
   
-        array_reverse($invoiceItems);
+        $invoiceItems = array_reverse($invoiceItems);
 
         $hasNewInvoice = false;
 
@@ -282,6 +282,8 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
                     (new StatusHelper($existingTransaction->order))->syncOrderStatuses($existingTransaction);
                 }
 
+                continue;
+            } else {
                 continue;
             }
 
