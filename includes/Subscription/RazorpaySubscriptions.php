@@ -270,20 +270,21 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
                 ->where('vendor_charge_id', $paymentId)
                 ->first();
 
-            if ($existingTransaction && $existingTransaction->status != Status::TRANSACTION_SUCCEEDED) {
+            if ($existingTransaction) {
 
-                $existingTransaction->update([
-                    'vendor_charge_id' => $paymentId,
-                    'status' => Status::TRANSACTION_SUCCEEDED
-                ]);
+                if ($existingTransaction->status != Status::TRANSACTION_SUCCEEDED) {
+                    
+                    $existingTransaction->update([
+                        'vendor_charge_id' => $paymentId,
+                        'status' => Status::TRANSACTION_SUCCEEDED
+                    ]);
 
-                // first payment than trigger 
-                if ($subscriptionModel->bill_count < 1) {
-                    (new StatusHelper($existingTransaction->order))->syncOrderStatuses($existingTransaction);
+                    // first payment than trigger 
+                    if ($subscriptionModel->bill_count < 1) {
+                        (new StatusHelper($existingTransaction->order))->syncOrderStatuses($existingTransaction);
+                    }
                 }
 
-                continue;
-            } else {
                 continue;
             }
 
