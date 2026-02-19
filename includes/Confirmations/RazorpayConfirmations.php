@@ -435,7 +435,7 @@ class RazorpayConfirmations
         );
 
         $subscription = Subscription::query()->where('id', $transaction->subscription_id)->first();
-        if ($order->type === Status::ORDER_TYPE_RENEWAL) {
+        if ($order->type === Status::ORDER_TYPE_RENEWAL && $subscription) {
 
             $razorpaySubscription = Arr::get($subscriptionUpdateData, 'vendor_response', []);
             $paymentMethod = Arr::get($razorpaySubscription, 'payment_method', '');
