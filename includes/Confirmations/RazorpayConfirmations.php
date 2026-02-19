@@ -212,7 +212,7 @@ class RazorpayConfirmations
         if ($transactionHashFromRazorpay !== $transactionHash) {
             fluent_cart_add_log(
                 'Razorpay Subscription Confirmation',
-                sprintf('Transaction ownership mismatch. Transaction %s belongs to subscription %s, not %s', $transactionHash, $transactionHashFromRazorpay, $transactionHash),
+                sprintf('Transaction ownership mismatch. Expected transaction hash %s but Razorpay subscription has %s', $transactionHash, $transactionHashFromRazorpay),
                 'error',
                 [
                     'module_name' => 'order',
