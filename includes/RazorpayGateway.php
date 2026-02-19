@@ -10,6 +10,8 @@ use FluentCart\Framework\Support\Arr;
 use FluentCart\App\Services\Payments\PaymentInstance;
 use FluentCart\App\Services\PluginInstaller\PaymentAddonManager;
 use FluentCart\App\Modules\PaymentMethods\Core\AbstractPaymentGateway;
+use RazorpayFluentCart\Subscription\RazorpaySubscriptions;
+use RazorpayFluentCart\Subscription\RazorpaySubscriptionProcessor;
 
 class RazorpayGateway extends AbstractPaymentGateway
 {
@@ -20,14 +22,15 @@ class RazorpayGateway extends AbstractPaymentGateway
     public array $supportedFeatures = [
         'payment',
         'refund',
-        'webhook'
+        'webhook',
+        'subscription'
     ];
 
     public function __construct()
     {
         parent::__construct(
-            new Settings\RazorpaySettingsBase(), 
-            null // No subscription support
+            new Settings\RazorpaySettingsBase(),
+            new RazorpaySubscriptions()
         );
     }
 
@@ -79,13 +82,9 @@ class RazorpayGateway extends AbstractPaymentGateway
             'cancel_url'  => $this->getCancelUrl(),
         ];
 
-        // check if the payment instance is a subscription
+        // Check if the payment instance is a subscription
         if ($paymentInstance->subscription) {
-            // not handled yet, will come later
-            wp_send_json([
-                'status'  => 'failed',
-                'message' => __('Subscription payments are not supported yet.', 'razorpay-for-fluent-cart')
-            ], 422);
+            return (new RazorpaySubscriptionProcessor())->handleSubscription($paymentInstance, $paymentArgs);
         }
 
         return (new Onetime\RazorpayProcessor())->handleSinglePayment($paymentInstance, $paymentArgs);
@@ -189,6 +188,17 @@ class RazorpayGateway extends AbstractPaymentGateway
         }
 
         return 'https://dashboard.razorpay.com/app/payments/' . $transaction->vendor_charge_id;
+    }
+
+    public function getSubscriptionUrl($url, $data): string
+    {
+        $subscription = Arr::get($data, 'subscription', null);
+        $url = 'https://dashboard.razorpay.com/app/subscriptions';
+        if (!$subscription || !$subscription->vendor_subscription_id) {
+            return $url;
+        }
+
+        return $url . '/' . $subscription->vendor_subscription_id;
     }
 
     public function processRefund($transaction, $amount, $args)
@@ -306,6 +316,15 @@ class RazorpayGateway extends AbstractPaymentGateway
                                 <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">payment.failed</code> - %s</li>
                                 <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">refund.processed</code> - %s</li>
                             </ul>
+                            <strong style="margin-top: 12px; display: block;">%s</strong>
+                            <ul style="margin: 8px 0 0 20px; list-style-type: disc;">
+                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">subscription.authenticated</code> - %s</li>
+                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">subscription.activated</code> - %s</li>
+                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">subscription.charged</code> - %s</li>
+                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">subscription.cancelled</code> - %s</li>
+                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">subscription.halted</code> - %s</li>
+                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">subscription.completed</code> - %s</li>
+                            </ul>
                         </div>
                         <p style="margin: 12px 0 0 0; padding: 8px 12px; background: light-dark(#fff3cd, #3d3716); border-left: 3px solid light-dark(#ffc107, #806200); border-radius: 4px; color: light-dark(#856404, #ffc107);">
                             <strong>⚠️ %s</strong> %s
@@ -314,11 +333,18 @@ class RazorpayGateway extends AbstractPaymentGateway
                     __('Webhook URL:', 'razorpay-for-fluent-cart'),
                     $webhook_url,
                     __('Configure this webhook URL with secret in your Razorpay Dashboard under <strong>Settings > Webhooks</strong> to receive real-time payment notifications.', 'razorpay-for-fluent-cart'),
-                    __('Required Webhook Events:', 'razorpay-for-fluent-cart'),
+                    __('Required Payment Events:', 'razorpay-for-fluent-cart'),
                     __('Payment authorized successfully', 'razorpay-for-fluent-cart'),
                     __('Payment captured and confirmed', 'razorpay-for-fluent-cart'),
                     __('Payment failed or declined', 'razorpay-for-fluent-cart'),
                     __('Refund completed successfully', 'razorpay-for-fluent-cart'),
+                    __('Required Subscription Events:', 'razorpay-for-fluent-cart'),
+                    __('Customer completed authentication', 'razorpay-for-fluent-cart'),
+                    __('Subscription is now active', 'razorpay-for-fluent-cart'),
+                    __('Recurring payment successful', 'razorpay-for-fluent-cart'),
+                    __('Subscription was cancelled', 'razorpay-for-fluent-cart'),
+                    __('Payment failures caused halt', 'razorpay-for-fluent-cart'),
+                    __('All billing cycles completed', 'razorpay-for-fluent-cart'),
                     __('Important:', 'razorpay-for-fluent-cart'),
                     __('Make sure to save webhook Secret in the credentials section above for secure webhook verification.', 'razorpay-for-fluent-cart')
                 ),
