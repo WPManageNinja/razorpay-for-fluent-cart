@@ -3,7 +3,7 @@
  * Plugin Name: Razorpay for FluentCart
  * Plugin URI: https://fluentcart.com
  * Description: Accept payments via Razorpay in FluentCart - supports one-time payments, refunds, and multiple payment methods
- * Version: 1.0.2
+ * Version: 1.2.0
  * Author: FluentCart
  * Author URI: https://fluentcart.com
  * Text Domain: razorpay-for-fluent-cart
@@ -17,7 +17,7 @@
 defined('ABSPATH') or exit;
 
 // Define plugin constants
-define('RAZORPAY_FC_VERSION', '1.0.2');
+define('RAZORPAY_FC_VERSION', '1.2.0');
 define('RAZORPAY_FC_PLUGIN_FILE', __FILE__);
 define('RAZORPAY_FC_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('RAZORPAY_FC_PLUGIN_URL', plugin_dir_url(__FILE__));
