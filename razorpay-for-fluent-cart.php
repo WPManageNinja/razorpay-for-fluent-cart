@@ -95,6 +95,39 @@ add_action('plugins_loaded', function() {
         \RazorpayFluentCart\RazorpayGateway::register();
     }, 10);
 
+    /**
+     * Plugin Updater
+     */
+    $apiUrl = 'https://api.fluentcart.com/wp-admin/admin-ajax.php?action=fluent_cart_razorpay_update&time=' . time();
+    new \RazorpayFluentCart\PluginManager\Updater($apiUrl, RAZORPAY_FC_PLUGIN_FILE, array(
+        'version'   => RAZORPAY_FC_VERSION,
+        'license'   => '12345',
+        'item_name' => 'Razorpay for FluentCart',
+        'item_id'   => '104',
+        'author'    => 'wpmanageninja'
+    ),
+        array(
+            'license_status' => 'valid',
+            'admin_page_url' => admin_url('admin.php?page=fluent-cart#/'),
+            'purchase_url'   => 'https://fluentcart.com',
+            'plugin_title'   => 'Razorpay for FluentCart'
+        )
+    );
+
+    add_filter('plugin_row_meta', function ($links, $pluginFile) {
+        if (plugin_basename(RAZORPAY_FC_PLUGIN_FILE) !== $pluginFile) {
+            return $links;
+        }
+
+        $checkUpdateUrl = esc_url(admin_url('plugins.php?razorpay-for-fluent-cart-check-update=' . time()));
+
+        $row_meta = array(
+            'check_update' => '<a style="color: #583fad;font-weight: 600;" href="' . $checkUpdateUrl . '" aria-label="' . esc_attr__('Check Update', 'razorpay-for-fluent-cart') . '">' . esc_html__('Check Update', 'razorpay-for-fluent-cart') . '</a>',
+        );
+
+        return array_merge($links, $row_meta);
+    }, 10, 2);
+
 }, 20);
 
 /**
