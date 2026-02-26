@@ -98,7 +98,7 @@ add_action('plugins_loaded', function() {
     /**
      * Plugin Updater
      */
-    $apiUrl = 'https://fluentcart.com/wp-admin/admin-ajax.php?action=fluent_cart_razorpay_update&time=' . time();
+    $apiUrl = 'https://api.fluentcart.com/wp-admin/admin-ajax.php?action=fluent_cart_razorpay_update&time=' . time();
     new \RazorpayFluentCart\PluginManager\Updater($apiUrl, RAZORPAY_FC_PLUGIN_FILE, array(
         'version'   => RAZORPAY_FC_VERSION,
         'license'   => '12345',
