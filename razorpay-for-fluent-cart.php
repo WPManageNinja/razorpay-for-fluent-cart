@@ -98,12 +98,12 @@ add_action('plugins_loaded', function() {
     /**
      * Plugin Updater
      */
-    $apiUrl = 'https://fluentcart.com/wp-admin/admin-ajax.php?action=fluent_cart_addon_update&time=' . time();
+    $apiUrl = 'https://fluentcart.com/wp-admin/admin-ajax.php?action=fluent_cart_razorpay_update&time=' . time();
     new \RazorpayFluentCart\PluginManager\Updater($apiUrl, RAZORPAY_FC_PLUGIN_FILE, array(
         'version'   => RAZORPAY_FC_VERSION,
-        'license'   => '',
+        'license'   => '12345',
         'item_name' => 'Razorpay for FluentCart',
-        'item_id'   => 'razorpay-for-fluent-cart',
+        'item_id'   => '104',
         'author'    => 'wpmanageninja'
     ),
         array(
