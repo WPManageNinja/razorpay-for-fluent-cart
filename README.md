@@ -16,17 +16,56 @@ A WordPress plugin that integrates Razorpay payment gateway with FluentCart.
 
 ## Installation
 
-1. Clone or download this repository to your WordPress plugins directory:
-   ```bash
-   cd wp-content/plugins/
-   git clone [your-repo-url] razorpay-for-fluent-cart
-   ```
+### Prerequisites
 
-2. Activate the plugin in WordPress admin
+- WordPress 5.6 or higher
+- PHP 7.4 or higher
+- [FluentCart](https://wordpress.org/plugins/fluent-cart/) plugin installed and activated
+- A [Razorpay](https://razorpay.com) merchant account
 
-3. Go to FluentCart > Settings > Payment Methods
+### Install & Activate
 
-4. Enable and configure Razorpay with your API keys from [Razorpay Dashboard](https://dashboard.razorpay.com/)
+1. **Download the Plugin**
+   - Visit the [latest release](../../releases/latest)
+   - Download the `Source code (zip)` file
+
+2. **Upload to WordPress**
+   - Go to your WordPress admin dashboard
+   - Navigate to **Plugins > Add New**
+   - Click **Upload Plugin**
+   - Select the downloaded zip file and click **Install Now**
+
+3. **Activate the Plugin**
+   - After installation, click **Activate Plugin**
+   - Alternatively, go to **Plugins** and click "Activate" below the plugin name
+
+4. **Configure Razorpay**
+   - Go to **FluentCart > Settings > Payment Methods**
+   - Find and enable **Razorpay**
+   - Enter your Test and Live API keys from the [Razorpay Dashboard](https://dashboard.razorpay.com/)
+   - Configure your webhook URL (see [Configuration](#configuration) below)
+
+## Updates
+
+To update the Razorpay for FluentCart addon:
+
+1. **Check for Updates**
+   - Go to **FluentCart > Settings > Payment Methods**
+   - Click on the **Razorpay** payment method
+   - Click the **Check for Updates** button
+
+2. **Download the New Version**
+   - If a new version is available, an **Update Now** button will appear
+   - Clicking this button will take you to the latest release page
+   - Download the `Source code (zip)` file
+
+3. **Install the Update**
+   - Go to **Plugins > Add New > Upload Plugin**
+   - Upload the new zip file
+   - WordPress will automatically replace the old version with the new one
+   - Reactivate the plugin if prompted
+
+> **Note:** Since this addon is distributed via GitHub releases (not the WordPress Plugin Directory), updates must be installed manually using the steps above.
 
 ## Requirements
 
@@ -189,4 +228,3 @@ GPLv2 or later. See LICENSE file for details.
 ## Credits
 
 Built for FluentCart following Razorpay API documentation.
-
