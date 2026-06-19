@@ -213,10 +213,43 @@ class RazorpayGateway extends AbstractPaymentGateway
         return (new Refund\RazorpayRefund())->processRemoteRefund($transaction, $amount, $args);
     }
 
+    public function getWebhookInstructions(): array
+    { 
+        $webhook_url = site_url('?fluent-cart=fct_payment_listener_ipn&method=razorpay');
+   
+        return [
+            'title'       => __('Webhook URL', 'razorpay-for-fluent-cart'),
+            'webhook_url' => esc_url($webhook_url),
+            'description' => __('Configure this webhook URL with secret in your Razorpay Dashboard.', 'razorpay-for-fluent-cart'),
+            'steps'       => [
+                'title' => __('How to configure?', 'razorpay-for-fluent-cart'),
+                'list'  => [
+                    __('In your Razorpay Dashboard under Settings &rarr; Webhooks', 'razorpay-for-fluent-cart'),
+                ],
+            ],
+            'events' => [
+                'title' => __('Required Webhook Events', 'razorpay-for-fluent-cart'),
+                'list'  => [
+                    'payment.authorized',
+                    'payment.captured',
+                    'payment.failed',
+                    'refund.processed',
+                    'subscription.authenticated',
+                    'subscription.activated',
+                    'invoice.paid',
+                    'subscription.cancelled',
+                    'subscription.halted',
+                    'subscription.completed',
+                ],
+            ],
+            
+        ];
+
+    }
+
 
     public function fields(): array
     {
-        $webhook_url = site_url('?fluent-cart=fct_payment_listener_ipn&method=razorpay');
         
         return [
             'notice' => [
@@ -280,74 +313,23 @@ class RazorpayGateway extends AbstractPaymentGateway
                 ]
             ],
             'international_payments_notice' => [
-                'value' => sprintf(
-                    '<div style="padding: 12px; background: light-dark(#fff3cd, #3d3716); border: 1px solid light-dark(#ffc107, #806200); border-radius: 4px; margin: 10px 0; color: light-dark(#856404, #ffc107);">
-                        <strong>%s</strong><br/>
-                        %s
-                        <ul style="margin: 8px 0 0 20px;">
-                            <li>%s</li>
-                            <li>%s</li>
-                        </ul>
-                        <p style="margin: 8px 0 0 0;"><strong>%s</strong> %s</p>
-                    </div>',
-                    __('💡 International Payments', 'razorpay-for-fluent-cart'),
-                    __('If you want to accept payments in payment from international customers, you must:', 'razorpay-for-fluent-cart'),
-                    __('Enable International Payments in Razorpay Dashboard', 'razorpay-for-fluent-cart'),
-                    __('Go to Settings > Configuration > Payment Methods', 'razorpay-for-fluent-cart'),
-                    __('For Testing:', 'razorpay-for-fluent-cart'),
-                    __('Use with local cards for fastest testing, or enable international payments as mentioned above.', 'razorpay-for-fluent-cart')
-                ),
+                'value' => [
+                     'title'       => __('International Payments', 'razorpay-for-fluent-cart'),
+                    'description' => __('If you want to accept payments from international customers', 'razorpay-for-fluent-cart'),
+                    'steps'       => [
+                        'title' => __('You must:', 'razorpay-for-fluent-cart'),
+                        'list'  => [
+                            __('Enable International Payments in Razorpay Dashboard', 'razorpay-for-fluent-cart'),
+                            __('Go to Settings &rarr; Configuration &rarr; Payment Methods', 'razorpay-for-fluent-cart'),
+                            
+                        ],
+                    ],
+                ],
                 'label' => '',
                 'type'  => 'html_attr'
             ],
             'webhook_info' => [
-                'value' => sprintf(
-                    '<div style="padding: 12px; background: light-dark(#f8f9fa, #1a1d21); border: 1px solid light-dark(#dee2e6, #3a3f47); border-radius: 4px; margin: 10px 0; color: light-dark(#212529, #e9ecef);">
-                        <p style="margin: 0 0 12px 0;">
-                            <strong>%s</strong>
-                            <code class="copyable-content" style="display: block; padding: 8px 12px; background: light-dark(#ffffff, #2d3139); border: 1px solid light-dark(#dee2e6, #3a3f47); border-radius: 4px; margin: 8px 0; font-family: monospace; word-break: break-all; color: light-dark(#212529, #e9ecef);">%s</code>
-                        </p>
-                        <p style="margin: 0 0 12px 0;">%s</p>
-                        <div style="margin: 12px 0 0 0;">
-                            <strong>%s</strong>
-                            <ul style="margin: 8px 0 0 20px; list-style-type: disc;">
-                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">payment.authorized</code> - %s</li>
-                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">payment.captured</code> - %s</li>
-                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">payment.failed</code> - %s</li>
-                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">refund.processed</code> - %s</li>
-                            </ul>
-                            <strong style="margin-top: 12px; display: block;">%s</strong>
-                            <ul style="margin: 8px 0 0 20px; list-style-type: disc;">
-                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">subscription.authenticated</code> - %s</li>
-                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">subscription.activated</code> - %s</li>
-                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">subscription.charged</code> - %s</li>
-                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">subscription.cancelled</code> - %s</li>
-                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">subscription.halted</code> - %s</li>
-                                <li><code style="background: light-dark(#e9ecef, #2d3139); padding: 2px 6px; border-radius: 3px; color: light-dark(#d63384, #f783ac);">subscription.completed</code> - %s</li>
-                            </ul>
-                        </div>
-                        <p style="margin: 12px 0 0 0; padding: 8px 12px; background: light-dark(#fff3cd, #3d3716); border-left: 3px solid light-dark(#ffc107, #806200); border-radius: 4px; color: light-dark(#856404, #ffc107);">
-                            <strong>⚠️ %s</strong> %s
-                        </p>
-                    </div>',
-                    __('Webhook URL:', 'razorpay-for-fluent-cart'),
-                    $webhook_url,
-                    __('Configure this webhook URL with secret in your Razorpay Dashboard under <strong>Settings > Webhooks</strong> to receive real-time payment notifications.', 'razorpay-for-fluent-cart'),
-                    __('Required Payment Events:', 'razorpay-for-fluent-cart'),
-                    __('Payment authorized successfully', 'razorpay-for-fluent-cart'),
-                    __('Payment captured and confirmed', 'razorpay-for-fluent-cart'),
-                    __('Payment failed or declined', 'razorpay-for-fluent-cart'),
-                    __('Refund completed successfully', 'razorpay-for-fluent-cart'),
-                    __('Required Subscription Events:', 'razorpay-for-fluent-cart'),
-                    __('Customer completed authentication', 'razorpay-for-fluent-cart'),
-                    __('Subscription is now active', 'razorpay-for-fluent-cart'),
-                    __('Recurring payment successful', 'razorpay-for-fluent-cart'),
-                    __('Subscription was cancelled', 'razorpay-for-fluent-cart'),
-                    __('Payment failures caused halt', 'razorpay-for-fluent-cart'),
-                    __('All billing cycles completed', 'razorpay-for-fluent-cart'),
-                    __('Important:', 'razorpay-for-fluent-cart'),
-                    __('Make sure to save webhook Secret in the credentials section above for secure webhook verification.', 'razorpay-for-fluent-cart')
-                ),
+                'value' => $this->getWebhookInstructions(),
                 'label' => __('Webhook Configuration', 'razorpay-for-fluent-cart'),
                 'type'  => 'html_attr'
             ],
