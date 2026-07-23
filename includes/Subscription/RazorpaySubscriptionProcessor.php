@@ -162,24 +162,7 @@ class RazorpaySubscriptionProcessor
             $subscriptionData['total_count'] = $totalCount;
         }
 
-        // UPI Autopay rejects mandates ending beyond 30 years; a delayed start_at
-        // must shed the delayed cycles so the end date stays within that window.
-        $maxCyclesFor30Years = [
-            'daily'       => 10950,
-            'weekly'      => 1560,
-            'monthly'     => 360,
-            'quarterly'   => 120,
-            'half_yearly' => 60,
-            'yearly'      => 30,
-        ];
-
-        if (!empty($subscriptionData['start_at'])) {
-            $delayCycles = (int) ceil(
-                ($subscriptionData['start_at'] - time()) / RazorpayPlan::getIntervalInSeconds($billingInterval)
-            );
-            $cap = max(1, ($maxCyclesFor30Years[$billingInterval] ?? 360) - $delayCycles);
-            $subscriptionData['total_count'] = min($subscriptionData['total_count'], $cap);
-        }
+        $this->capTotalCountForMandateWindow($subscriptionData, $billingInterval);
 
         $razorpaySubscription = RazorpayAPI::createRazorpayObject('subscriptions', $subscriptionData);
 
@@ -308,7 +291,7 @@ class RazorpaySubscriptionProcessor
                 'monthly'     => 120,   // ~10 years
                 'quarterly'   => 40,    // ~10 years
                 'half_yearly' => 20,    // ~10 years
-                'yearly'      => 100,   // 100 years (max supported by Razorpay)
+                'yearly'      => 10,    // ~10 years
             ];
             $subscriptionData['total_count'] = $unlimitedCounts[$billingInterval] ?? 120;
         }
@@ -316,6 +299,8 @@ class RazorpaySubscriptionProcessor
         if ($reactivationTrialDays > 0) {
             $subscriptionData['start_at'] = time() + ($reactivationTrialDays * DAY_IN_SECONDS);
         }
+
+        $this->capTotalCountForMandateWindow($subscriptionData, $billingInterval);
 
         $razorpaySubscription = RazorpayAPI::createRazorpayObject('subscriptions', $subscriptionData);
 
@@ -381,5 +366,39 @@ class RazorpaySubscriptionProcessor
                 'is_renewal'       => true,
             ]),
         ];
+    }
+
+    /**
+     * UPI Autopay rejects mandates ending beyond 30 years; a delayed start_at
+     * must shed the delayed cycles so the end date stays within that window.
+     *
+     * @param array  $subscriptionData Passed by reference; total_count is clamped in place.
+     * @param string $billingInterval
+     */
+    private function capTotalCountForMandateWindow(&$subscriptionData, $billingInterval)
+    {
+        if (empty($subscriptionData['total_count'])) {
+            return;
+        }
+
+        $maxCyclesFor30Years = [
+            'daily'       => 10950,
+            'weekly'      => 1560,
+            'monthly'     => 360,
+            'quarterly'   => 120,
+            'half_yearly' => 60,
+            'yearly'      => 30,
+        ];
+
+        $cap = $maxCyclesFor30Years[$billingInterval] ?? 360;
+
+        if (!empty($subscriptionData['start_at'])) {
+            $delayCycles = (int) ceil(
+                ($subscriptionData['start_at'] - time()) / RazorpayPlan::getIntervalInSeconds($billingInterval)
+            );
+            $cap = max(1, $cap - $delayCycles);
+        }
+
+        $subscriptionData['total_count'] = min($subscriptionData['total_count'], $cap);
     }
 }
