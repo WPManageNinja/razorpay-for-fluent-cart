@@ -16,6 +16,16 @@ if (!defined('ABSPATH')) {
 
 class RazorpaySubscriptionProcessor
 {
+    // 30 years per interval — UPI Autopay's maximum mandate window.
+    private const MAX_CYCLES_30_YEARS = [
+        'daily'       => 10950,
+        'weekly'      => 1560,
+        'monthly'     => 360,
+        'quarterly'   => 120,
+        'half_yearly' => 60,
+        'yearly'      => 30,
+    ];
+
     public function handleSubscription(PaymentInstance $paymentInstance, $paymentArgs = [])
     {
         $order = $paymentInstance->order;
@@ -144,18 +154,8 @@ class RazorpaySubscriptionProcessor
         if ($totalCount > 0) {
             $subscriptionData['total_count'] = $totalCount;
         } else {
-            // For unlimited subscriptions (bill_times = 0), set appropriate total_count
-            // Razorpay supports max 100 years, but cycles depend on billing interval
-            $unlimitedCounts = [
-                'daily'       => 10950,  // ~30 years
-                'weekly'      => 1560,   // ~30 years
-                'monthly'     => 360,   // ~30 years
-                'quarterly'   => 120,    // ~30 years
-                'half_yearly' => 60,    // ~30 years
-                'yearly'      => 30,   // 30 years (max supported by Razorpay)
-            ];
-
-            $totalCount = apply_filters('fc_razorpay/total_count_for_infinite_subscription', $unlimitedCounts[$billingInterval] ?? 360, [
+            // For unlimited subscriptions (bill_times = 0), bill for the maximum mandate window
+            $totalCount = apply_filters('fc_razorpay/total_count_for_infinite_subscription', self::MAX_CYCLES_30_YEARS[$billingInterval] ?? 360, [
                 'subscription' => $subscription
             ]);
 
@@ -284,16 +284,10 @@ class RazorpaySubscriptionProcessor
                 $subscriptionData['total_count'] = $remainingBillTimes;
             }
         } else {
-            // For unlimited subscriptions (bill_times = 0), set appropriate total_count
-            $unlimitedCounts = [
-                'daily'       => 3650,  // ~10 years
-                'weekly'      => 520,   // ~10 years
-                'monthly'     => 120,   // ~10 years
-                'quarterly'   => 40,    // ~10 years
-                'half_yearly' => 20,    // ~10 years
-                'yearly'      => 10,    // ~10 years
-            ];
-            $subscriptionData['total_count'] = $unlimitedCounts[$billingInterval] ?? 120;
+            // For unlimited subscriptions (bill_times = 0), bill for the maximum mandate window
+            $subscriptionData['total_count'] = apply_filters('fc_razorpay/total_count_for_infinite_subscription', self::MAX_CYCLES_30_YEARS[$billingInterval] ?? 360, [
+                'subscription' => $subscription
+            ]);
         }
 
         if ($reactivationTrialDays > 0) {
@@ -381,16 +375,7 @@ class RazorpaySubscriptionProcessor
             return;
         }
 
-        $maxCyclesFor30Years = [
-            'daily'       => 10950,
-            'weekly'      => 1560,
-            'monthly'     => 360,
-            'quarterly'   => 120,
-            'half_yearly' => 60,
-            'yearly'      => 30,
-        ];
-
-        $cap = $maxCyclesFor30Years[$billingInterval] ?? 360;
+        $cap = self::MAX_CYCLES_30_YEARS[$billingInterval] ?? 360;
 
         if (!empty($subscriptionData['start_at'])) {
             $delayCycles = (int) ceil(
