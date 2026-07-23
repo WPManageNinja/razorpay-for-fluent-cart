@@ -147,6 +147,7 @@ class RazorpaySubscriptionProcessor
             // For unlimited subscriptions (bill_times = 0), set appropriate total_count
             // Razorpay supports max 100 years, but cycles depend on billing interval
             $unlimitedCounts = [
+                'daily'       => 10950,  // ~30 years
                 'weekly'      => 1560,   // ~30 years
                 'monthly'     => 360,   // ~30 years
                 'quarterly'   => 120,    // ~30 years
@@ -154,11 +155,30 @@ class RazorpaySubscriptionProcessor
                 'yearly'      => 30,   // 30 years (max supported by Razorpay)
             ];
 
-            $totalCount = apply_filters('fc_razorpay/total_count_for_infinite_subscription', $unlimitedCounts[$billingInterval], [
+            $totalCount = apply_filters('fc_razorpay/total_count_for_infinite_subscription', $unlimitedCounts[$billingInterval] ?? 360, [
                 'subscription' => $subscription
             ]);
 
             $subscriptionData['total_count'] = $totalCount;
+        }
+
+        // UPI Autopay rejects mandates ending beyond 30 years; a delayed start_at
+        // must shed the delayed cycles so the end date stays within that window.
+        $maxCyclesFor30Years = [
+            'daily'       => 10950,
+            'weekly'      => 1560,
+            'monthly'     => 360,
+            'quarterly'   => 120,
+            'half_yearly' => 60,
+            'yearly'      => 30,
+        ];
+
+        if (!empty($subscriptionData['start_at'])) {
+            $delayCycles = (int) ceil(
+                ($subscriptionData['start_at'] - time()) / RazorpayPlan::getIntervalInSeconds($billingInterval)
+            );
+            $cap = max(1, ($maxCyclesFor30Years[$billingInterval] ?? 360) - $delayCycles);
+            $subscriptionData['total_count'] = min($subscriptionData['total_count'], $cap);
         }
 
         $razorpaySubscription = RazorpayAPI::createRazorpayObject('subscriptions', $subscriptionData);
