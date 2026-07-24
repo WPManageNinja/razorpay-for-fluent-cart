@@ -92,10 +92,12 @@ class RazorpayHelper
         }
 
         $customerData = [
-            'name'    => trim($fcCustomer->first_name . ' ' . $fcCustomer->last_name),
-            'email'   => $fcCustomer->email,
-            'contact' => $fcCustomer->phone ?: '',
-            'notes'   => [
+            'name'          => trim($fcCustomer->first_name . ' ' . $fcCustomer->last_name),
+            'email'         => $fcCustomer->email,
+            'contact'       => $fcCustomer->phone ?: '',
+            // Return the existing customer instead of "Customer already exists" error
+            'fail_existing' => 0,
+            'notes'         => [
                 'fluent_cart_customer_id' => $fcCustomer->id,
             ],
         ];
