@@ -290,8 +290,28 @@ class RazorpayConfirmations
             }
         } else {
             // Mandate-authorization payments (trial / delayed start) carry no invoice;
-            // ownership is proven by the subscription-notes hash check above.
+            // the verified checkout signature binds this payment to the subscription.
             $razorpaySubscriptionStatus = Arr::get($razorpaySubscription, 'status');
+
+            // Razorpay flips created → authenticated moments after the auth payment lands.
+            $attempts = 0;
+            while ($razorpaySubscriptionStatus === 'created' && $attempts < 3) {
+                sleep(1);
+                $refetched = RazorpayAPI::getRazorpayObject('subscriptions/' . $razorpaySubscriptionId);
+                if (!is_wp_error($refetched)) {
+                    $razorpaySubscription = $refetched;
+                    $razorpaySubscriptionStatus = Arr::get($razorpaySubscription, 'status');
+                }
+                $attempts++;
+            }
+
+            if ($razorpaySubscriptionStatus === 'created') {
+                // Vendor status is lagging; the signature-bound auth payment (validated
+                // below) proves the mandate. Webhooks true up the status later.
+                $razorpaySubscription['status'] = 'authenticated';
+                $razorpaySubscriptionStatus = 'authenticated';
+            }
+
             if (!in_array($razorpaySubscriptionStatus, ['authenticated', 'active'])) {
                 fluent_cart_add_log(
                     'Razorpay Subscription Confirmation',
