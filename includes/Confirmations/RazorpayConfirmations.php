@@ -53,7 +53,9 @@ class RazorpayConfirmations
                 $this->confirmationFailed(400);
             };
 
-            $this->confirmSubscriptionPayment($transactionHash, $paymentId, $razorpaySubscriptionId);
+            $signature = sanitize_text_field(wp_unslash(Arr::get($_REQUEST, 'razorpay_signature', '')));
+
+            $this->confirmSubscriptionPayment($transactionHash, $paymentId, $razorpaySubscriptionId, $signature);
             return;
         }
 
@@ -167,8 +169,9 @@ class RazorpayConfirmations
      * @param string $transactionHash
      * @param string $paymentId
      * @param string $razorpaySubscriptionId
+     * @param string $signature
      */
-    public function confirmSubscriptionPayment($transactionHash, $paymentId, $razorpaySubscriptionId)
+    public function confirmSubscriptionPayment($transactionHash, $paymentId, $razorpaySubscriptionId, $signature = '')
     {
         $transactionModel = OrderTransaction::query()
             ->where('uuid', $transactionHash)
@@ -177,6 +180,24 @@ class RazorpayConfirmations
 
         if (!$transactionModel) {
             $this->confirmationFailed(404);
+        }
+
+        // Checkout signature: HMAC-SHA256(payment_id . '|' . subscription_id, api_secret) —
+        // Razorpay's proof that this payment belongs to this subscription.
+        $apiSecret = trim(Arr::get(RazorpayAPI::getSettings()->getApiKeys(), 'api_secret', ''));
+        $expectedSignature = hash_hmac('sha256', $paymentId . '|' . $razorpaySubscriptionId, $apiSecret);
+
+        if (!$signature || !hash_equals($expectedSignature, $signature)) {
+            fluent_cart_add_log(
+                'Razorpay Subscription Confirmation',
+                sprintf('Signature verification failed for payment %s / subscription %s', $paymentId, $razorpaySubscriptionId),
+                'error',
+                [
+                    'module_name' => 'order',
+                    'module_id'   => $transactionModel->order_id,
+                ]
+            );
+            $this->confirmationFailed(400);
         }
 
         if ($transactionModel->status === Status::TRANSACTION_SUCCEEDED) {
