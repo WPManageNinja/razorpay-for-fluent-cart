@@ -53,7 +53,9 @@ class RazorpayConfirmations
                 $this->confirmationFailed(400);
             };
 
-            $this->confirmSubscriptionPayment($transactionHash, $paymentId, $razorpaySubscriptionId);
+            $signature = sanitize_text_field(wp_unslash(Arr::get($_REQUEST, 'razorpay_signature', '')));
+
+            $this->confirmSubscriptionPayment($transactionHash, $paymentId, $razorpaySubscriptionId, $signature);
             return;
         }
 
@@ -167,8 +169,9 @@ class RazorpayConfirmations
      * @param string $transactionHash
      * @param string $paymentId
      * @param string $razorpaySubscriptionId
+     * @param string $signature
      */
-    public function confirmSubscriptionPayment($transactionHash, $paymentId, $razorpaySubscriptionId)
+    public function confirmSubscriptionPayment($transactionHash, $paymentId, $razorpaySubscriptionId, $signature = '')
     {
         $transactionModel = OrderTransaction::query()
             ->where('uuid', $transactionHash)
@@ -177,6 +180,24 @@ class RazorpayConfirmations
 
         if (!$transactionModel) {
             $this->confirmationFailed(404);
+        }
+
+        // Checkout signature: HMAC-SHA256(payment_id . '|' . subscription_id, api_secret) —
+        // Razorpay's proof that this payment belongs to this subscription.
+        $apiSecret = trim(Arr::get(RazorpayAPI::getSettings()->getApiKeys(), 'api_secret', ''));
+        $expectedSignature = hash_hmac('sha256', $paymentId . '|' . $razorpaySubscriptionId, $apiSecret);
+
+        if (!$signature || !hash_equals($expectedSignature, $signature)) {
+            fluent_cart_add_log(
+                'Razorpay Subscription Confirmation',
+                sprintf('Signature verification failed for payment %s / subscription %s', $paymentId, $razorpaySubscriptionId),
+                'error',
+                [
+                    'module_name' => 'order',
+                    'module_id'   => $transactionModel->order_id,
+                ]
+            );
+            $this->confirmationFailed(400);
         }
 
         if ($transactionModel->status === Status::TRANSACTION_SUCCEEDED) {
@@ -239,32 +260,70 @@ class RazorpayConfirmations
 
         $invoiceId = Arr::get($razorpayPayment, 'invoice_id', '');
 
-        // does this invoice corresponds to an invoice with subscription_id === $razorpaySubscriptionId
-        $invoice = RazorpayAPI::getRazorpayObject('invoices/' . $invoiceId);
-        if (is_wp_error($invoice)) {
-            fluent_cart_add_log(
-                'Razorpay Subscription Confirmation',
-                'Failed to fetch invoice: ' . $invoice->get_error_message(),
-                'error',
-                [
-                    'module_name' => 'order',
-                    'module_id'   => $order->id,
-                ]
-            );
-            $this->confirmationFailed(400);
-        }
+        if ($invoiceId) {
+            // does this invoice corresponds to an invoice with subscription_id === $razorpaySubscriptionId
+            $invoice = RazorpayAPI::getRazorpayObject('invoices/' . $invoiceId);
+            if (is_wp_error($invoice)) {
+                fluent_cart_add_log(
+                    'Razorpay Subscription Confirmation',
+                    'Failed to fetch invoice: ' . $invoice->get_error_message(),
+                    'error',
+                    [
+                        'module_name' => 'order',
+                        'module_id'   => $order->id,
+                    ]
+                );
+                $this->confirmationFailed(400);
+            }
 
-        if (Arr::get($invoice, 'subscription_id') !== $razorpaySubscriptionId) {
-            fluent_cart_add_log(
-                'Razorpay Subscription Confirmation',
-                sprintf('Invoice subscription mismatch. Invoice %s belongs to subscription %s, not %s', $invoiceId, Arr::get($invoice, 'subscription_id'), $razorpaySubscriptionId),
-                'error',
-                [
-                    'module_name' => 'order',
-                    'module_id'   => $order->id,
-                ]
-            );
-            $this->confirmationFailed(400);
+            if (Arr::get($invoice, 'subscription_id') !== $razorpaySubscriptionId) {
+                fluent_cart_add_log(
+                    'Razorpay Subscription Confirmation',
+                    sprintf('Invoice subscription mismatch. Invoice %s belongs to subscription %s, not %s', $invoiceId, Arr::get($invoice, 'subscription_id'), $razorpaySubscriptionId),
+                    'error',
+                    [
+                        'module_name' => 'order',
+                        'module_id'   => $order->id,
+                    ]
+                );
+                $this->confirmationFailed(400);
+            }
+        } else {
+            // Mandate-authorization payments (trial / delayed start) carry no invoice;
+            // the verified checkout signature binds this payment to the subscription.
+            $razorpaySubscriptionStatus = Arr::get($razorpaySubscription, 'status');
+
+            // Razorpay flips created → authenticated moments after the auth payment lands.
+            $attempts = 0;
+            while ($razorpaySubscriptionStatus === 'created' && $attempts < 3) {
+                sleep(1);
+                $refetched = RazorpayAPI::getRazorpayObject('subscriptions/' . $razorpaySubscriptionId);
+                if (!is_wp_error($refetched)) {
+                    $razorpaySubscription = $refetched;
+                    $razorpaySubscriptionStatus = Arr::get($razorpaySubscription, 'status');
+                }
+                $attempts++;
+            }
+
+            if ($razorpaySubscriptionStatus === 'created') {
+                // Vendor status is lagging; the signature-bound auth payment (validated
+                // below) proves the mandate. Webhooks true up the status later.
+                $razorpaySubscription['status'] = 'authenticated';
+                $razorpaySubscriptionStatus = 'authenticated';
+            }
+
+            if (!in_array($razorpaySubscriptionStatus, ['authenticated', 'active'])) {
+                fluent_cart_add_log(
+                    'Razorpay Subscription Confirmation',
+                    sprintf('Payment %s has no invoice and subscription %s is not authenticated (status: %s)', $paymentId, $razorpaySubscriptionId, $razorpaySubscriptionStatus),
+                    'error',
+                    [
+                        'module_name' => 'order',
+                        'module_id'   => $order->id,
+                    ]
+                );
+                $this->confirmationFailed(400);
+            }
         }
 
         $razorpayPaymentStatus = Arr::get($razorpayPayment, 'status');
@@ -394,6 +453,38 @@ class RazorpayConfirmations
         if ($status === Status::TRANSACTION_REFUNDED && $transaction->total <= 0) {
             $status = Status::TRANSACTION_SUCCEEDED;
             $amount = 0;
+        }
+
+        if ($transaction->total <= 0 && $amount > 0) {
+            $displayAuthAmount = CurrenciesHelper::isZeroDecimal($currency) ? $amount : ($amount / 100);
+            $authChargeMessage = sprintf(
+                '%s %s was charged by Razorpay to authorize the mandate (payment %s). Razorpay refunds this amount automatically.',
+                $displayAuthAmount,
+                $currency,
+                $paymentId
+            );
+
+            fluent_cart_add_log(
+                'Razorpay Mandate Authorization Charge',
+                $authChargeMessage,
+                'info',
+                [
+                    'module_name' => 'order',
+                    'module_id'   => $order->id,
+                ]
+            );
+
+            if ($transaction->subscription_id) {
+                fluent_cart_add_log(
+                    'Razorpay Mandate Authorization Charge',
+                    $authChargeMessage,
+                    'info',
+                    [
+                        'module_name' => 'subscription',
+                        'module_id'   => $transaction->subscription_id,
+                    ]
+                );
+            }
         }
 
         $updateData = [
