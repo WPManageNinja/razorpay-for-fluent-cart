@@ -457,20 +457,34 @@ class RazorpayConfirmations
 
         if ($transaction->total <= 0 && $amount > 0) {
             $displayAuthAmount = CurrenciesHelper::isZeroDecimal($currency) ? $amount : ($amount / 100);
+            $authChargeMessage = sprintf(
+                '%s %s was charged by Razorpay to authorize the mandate (payment %s). Razorpay refunds this amount automatically.',
+                $displayAuthAmount,
+                $currency,
+                $paymentId
+            );
+
             fluent_cart_add_log(
                 'Razorpay Mandate Authorization Charge',
-                sprintf(
-                    '%s %s was charged by Razorpay to authorize the mandate (payment %s). Razorpay refunds this amount automatically.',
-                    $displayAuthAmount,
-                    $currency,
-                    $paymentId
-                ),
+                $authChargeMessage,
                 'info',
                 [
                     'module_name' => 'order',
                     'module_id'   => $order->id,
                 ]
             );
+
+            if ($transaction->subscription_id) {
+                fluent_cart_add_log(
+                    'Razorpay Mandate Authorization Charge',
+                    $authChargeMessage,
+                    'info',
+                    [
+                        'module_name' => 'subscription',
+                        'module_id'   => $transaction->subscription_id,
+                    ]
+                );
+            }
         }
 
         $updateData = [
