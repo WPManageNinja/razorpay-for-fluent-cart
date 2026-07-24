@@ -239,32 +239,50 @@ class RazorpayConfirmations
 
         $invoiceId = Arr::get($razorpayPayment, 'invoice_id', '');
 
-        // does this invoice corresponds to an invoice with subscription_id === $razorpaySubscriptionId
-        $invoice = RazorpayAPI::getRazorpayObject('invoices/' . $invoiceId);
-        if (is_wp_error($invoice)) {
-            fluent_cart_add_log(
-                'Razorpay Subscription Confirmation',
-                'Failed to fetch invoice: ' . $invoice->get_error_message(),
-                'error',
-                [
-                    'module_name' => 'order',
-                    'module_id'   => $order->id,
-                ]
-            );
-            $this->confirmationFailed(400);
-        }
+        if ($invoiceId) {
+            // does this invoice corresponds to an invoice with subscription_id === $razorpaySubscriptionId
+            $invoice = RazorpayAPI::getRazorpayObject('invoices/' . $invoiceId);
+            if (is_wp_error($invoice)) {
+                fluent_cart_add_log(
+                    'Razorpay Subscription Confirmation',
+                    'Failed to fetch invoice: ' . $invoice->get_error_message(),
+                    'error',
+                    [
+                        'module_name' => 'order',
+                        'module_id'   => $order->id,
+                    ]
+                );
+                $this->confirmationFailed(400);
+            }
 
-        if (Arr::get($invoice, 'subscription_id') !== $razorpaySubscriptionId) {
-            fluent_cart_add_log(
-                'Razorpay Subscription Confirmation',
-                sprintf('Invoice subscription mismatch. Invoice %s belongs to subscription %s, not %s', $invoiceId, Arr::get($invoice, 'subscription_id'), $razorpaySubscriptionId),
-                'error',
-                [
-                    'module_name' => 'order',
-                    'module_id'   => $order->id,
-                ]
-            );
-            $this->confirmationFailed(400);
+            if (Arr::get($invoice, 'subscription_id') !== $razorpaySubscriptionId) {
+                fluent_cart_add_log(
+                    'Razorpay Subscription Confirmation',
+                    sprintf('Invoice subscription mismatch. Invoice %s belongs to subscription %s, not %s', $invoiceId, Arr::get($invoice, 'subscription_id'), $razorpaySubscriptionId),
+                    'error',
+                    [
+                        'module_name' => 'order',
+                        'module_id'   => $order->id,
+                    ]
+                );
+                $this->confirmationFailed(400);
+            }
+        } else {
+            // Mandate-authorization payments (trial / delayed start) carry no invoice;
+            // ownership is proven by the subscription-notes hash check above.
+            $razorpaySubscriptionStatus = Arr::get($razorpaySubscription, 'status');
+            if (!in_array($razorpaySubscriptionStatus, ['authenticated', 'active'])) {
+                fluent_cart_add_log(
+                    'Razorpay Subscription Confirmation',
+                    sprintf('Payment %s has no invoice and subscription %s is not authenticated (status: %s)', $paymentId, $razorpaySubscriptionId, $razorpaySubscriptionStatus),
+                    'error',
+                    [
+                        'module_name' => 'order',
+                        'module_id'   => $order->id,
+                    ]
+                );
+                $this->confirmationFailed(400);
+            }
         }
 
         $razorpayPaymentStatus = Arr::get($razorpayPayment, 'status');
