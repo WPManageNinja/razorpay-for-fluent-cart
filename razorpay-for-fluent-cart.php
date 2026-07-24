@@ -3,7 +3,7 @@
  * Plugin Name: Razorpay for FluentCart
  * Plugin URI: https://fluentcart.com
  * Description: Accept payments via Razorpay in FluentCart - supports one-time payments, refunds, and multiple payment methods
- * Version: 1.2.1
+ * Version: 1.2.2
  * Author: FluentCart
  * Author URI: https://fluentcart.com
  * Text Domain: razorpay-for-fluent-cart
@@ -17,7 +17,7 @@
 defined('ABSPATH') or exit;
 
 // Define plugin constants
-define('RAZORPAY_FC_VERSION', '1.2.1');
+define('RAZORPAY_FC_VERSION', '1.2.2');
 define('RAZORPAY_FC_PLUGIN_FILE', __FILE__);
 define('RAZORPAY_FC_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('RAZORPAY_FC_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -98,19 +98,15 @@ add_action('plugins_loaded', function() {
     /**
      * Plugin Updater
      */
-    $apiUrl = 'https://api.fluentcart.com/wp-admin/admin-ajax.php?action=fluent_cart_razorpay_update&time=' . time();
-    new \RazorpayFluentCart\PluginManager\Updater($apiUrl, RAZORPAY_FC_PLUGIN_FILE, array(
-        'version'   => RAZORPAY_FC_VERSION,
-        'license'   => '12345',
-        'item_name' => 'Razorpay for FluentCart',
-        'item_id'   => '104',
-        'author'    => 'wpmanageninja'
-    ),
+    new \RazorpayFluentCart\PluginManager\Updater(
+        'https://fluentcart.com/',
+        RAZORPAY_FC_PLUGIN_FILE,
         array(
-            'license_status' => 'valid',
-            'admin_page_url' => admin_url('admin.php?page=fluent-cart#/'),
-            'purchase_url'   => 'https://fluentcart.com',
-            'plugin_title'   => 'Razorpay for FluentCart'
+            'version'           => RAZORPAY_FC_VERSION,
+            'addon_slug'        => 'razorpay-for-fluent-cart',
+            'parent_product_id' => 21480,
+            'plugin_title'      => 'Razorpay for FluentCart',
+            'is_free'           => true,
         )
     );
 

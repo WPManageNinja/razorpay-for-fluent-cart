@@ -132,8 +132,18 @@ class RazorpayAPI
         if ($statusCode >= 400 || !empty($responseData['error'])) {
             $message = Arr::get($responseData, 'error.description');
             if (!$message) {
-                $message = 'Unknown Razorpay API request error';
+                $message = sprintf('Razorpay API request failed (HTTP %s)', $statusCode ?: 'no response');
             }
+
+            if (function_exists('fluent_cart_add_log')) {
+                fluent_cart_add_log(
+                    'Razorpay API Error',
+                    sprintf('%s %s → HTTP %s. Body: %s', strtoupper($method), $endpoint, $statusCode, mb_substr((string) $body, 0, 1000)),
+                    'error',
+                    ['module_name' => 'system']
+                );
+            }
+
             return new \WP_Error(
                 'razorpay_api_error',
                 $message,
