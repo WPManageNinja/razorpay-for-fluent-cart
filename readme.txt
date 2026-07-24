@@ -2,9 +2,9 @@
 Contributors: hasanuzzamanshamim
 Tags: razorpay, payment gateway, fluentcart, india, inr
 Requires at least: 5.6
-Tested up to: 6.9
+Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.2.1
+Stable tag: 1.2.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -85,6 +85,13 @@ The plugin automatically handles webhook configuration. The webhook URL is displ
 4. Transaction management
 
 == Changelog ==
+
+= 1.2.2 =
+24 July 2026
+* Fixes trial subscription checkout failing with "Payment confirmation failed"
+* Fixes coupon applied subscriptions rejected on UPI with "expire_at cannot be more than 30 years"
+* Fixes "Customer already exists for the merchant" error blocking checkout
+* Adds detailed webhook event guide (payment and subscription events) in settings
 
 = 1.2.0 =
 23 February 2026
