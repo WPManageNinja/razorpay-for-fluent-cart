@@ -23,7 +23,8 @@ class RazorpayGateway extends AbstractPaymentGateway
         'payment',
         'refund',
         'webhook',
-        'subscription'
+        'subscription',
+        'manual_subscription'
     ];
 
     public function __construct()
@@ -84,6 +85,10 @@ class RazorpayGateway extends AbstractPaymentGateway
 
         // Check if the payment instance is a subscription
         if ($paymentInstance->subscription) {
+            if ($this->shouldChargeSubscriptionAsOneTime($paymentInstance)) {
+                return (new Onetime\RazorpayProcessor())->handleSinglePayment($paymentInstance, $paymentArgs);
+            }
+
             return (new RazorpaySubscriptionProcessor())->handleSubscription($paymentInstance, $paymentArgs);
         }
 
