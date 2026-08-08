@@ -219,37 +219,61 @@ class RazorpayGateway extends AbstractPaymentGateway
     }
 
     public function getWebhookInstructions(): array
-    { 
+    {
         $webhook_url = site_url('?fluent-cart=fct_payment_listener_ipn&method=razorpay');
-   
+
         return [
             'title'       => __('Webhook URL', 'razorpay-for-fluent-cart'),
             'webhook_url' => esc_url($webhook_url),
-            'description' => __('Configure this webhook URL with secret in your Razorpay Dashboard.', 'razorpay-for-fluent-cart'),
+            'description' => __('Configure this webhook URL with secret in your Razorpay Dashboard under Settings &rarr; Webhooks to receive real-time payment notifications.', 'razorpay-for-fluent-cart'),
             'steps'       => [
                 'title' => __('How to configure?', 'razorpay-for-fluent-cart'),
                 'list'  => [
                     __('In your Razorpay Dashboard under Settings &rarr; Webhooks', 'razorpay-for-fluent-cart'),
                 ],
             ],
-            'events' => [
+            'events'      => [
                 'title' => __('Required Webhook Events', 'razorpay-for-fluent-cart'),
-                'list'  => [
+                'list'   => [
                     'payment.authorized',
                     'payment.captured',
                     'payment.failed',
                     'refund.processed',
                     'subscription.authenticated',
                     'subscription.activated',
-                    'invoice.paid',
+                    'subscription.charged',
                     'subscription.cancelled',
                     'subscription.halted',
                     'subscription.completed',
                 ],
+                'groups' => [
+                    [
+                        'title' => __('Required Payment Events', 'razorpay-for-fluent-cart'),
+                        'list'  => [
+                            ['event' => 'payment.authorized', 'desc' => __('Payment authorized successfully', 'razorpay-for-fluent-cart')],
+                            ['event' => 'payment.captured', 'desc' => __('Payment captured and confirmed', 'razorpay-for-fluent-cart')],
+                            ['event' => 'payment.failed', 'desc' => __('Payment failed or declined', 'razorpay-for-fluent-cart')],
+                            ['event' => 'refund.processed', 'desc' => __('Refund completed successfully', 'razorpay-for-fluent-cart')],
+                        ],
+                    ],
+                    [
+                        'title' => __('Required Subscription Events', 'razorpay-for-fluent-cart'),
+                        'list'  => [
+                            ['event' => 'subscription.authenticated', 'desc' => __('Customer completed authentication', 'razorpay-for-fluent-cart')],
+                            ['event' => 'subscription.activated', 'desc' => __('Subscription is now active', 'razorpay-for-fluent-cart')],
+                            ['event' => 'subscription.charged', 'desc' => __('Recurring payment successful', 'razorpay-for-fluent-cart')],
+                            ['event' => 'subscription.cancelled', 'desc' => __('Subscription was cancelled', 'razorpay-for-fluent-cart')],
+                            ['event' => 'subscription.halted', 'desc' => __('Payment failures caused halt', 'razorpay-for-fluent-cart')],
+                            ['event' => 'subscription.completed', 'desc' => __('All billing cycles completed', 'razorpay-for-fluent-cart')],
+                        ],
+                    ],
+                ],
             ],
-            
+            'webhook_notice' => [
+                'title'       => __('Important', 'razorpay-for-fluent-cart'),
+                'description' => __('Make sure to save webhook Secret in the credentials section above for secure webhook verification.', 'razorpay-for-fluent-cart'),
+            ],
         ];
-
     }
 
 
