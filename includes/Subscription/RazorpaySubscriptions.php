@@ -270,10 +270,20 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
                 ->where('vendor_charge_id', $paymentId)
                 ->first();
 
+            // Razorpay's invoice paid_at is when the payment was made (Unix
+            // epoch); that is the settlement moment, not this resync's run time.
+            $invoicePaidAt = Arr::get($invoice, 'paid_at');
+            $settledAt = $invoicePaidAt ? gmdate('Y-m-d H:i:s', (int) $invoicePaidAt) : null;
+
             if ($existingTransaction) {
 
                 if ($existingTransaction->status != Status::TRANSACTION_SUCCEEDED) {
-                    
+                    if ($settledAt && empty($existingTransaction->meta['settled_at'])) {
+                        $existingTransaction->meta = array_merge($existingTransaction->meta ?? [], [
+                            'settled_at' => $settledAt
+                        ]);
+                    }
+
                     $existingTransaction->update([
                         'vendor_charge_id' => $paymentId,
                         'status' => Status::TRANSACTION_SUCCEEDED
@@ -301,6 +311,15 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
                 ->first();
 
             if ($transaction) {
+                $chargedAt = $settledAt ?: (Arr::get($payment, 'created_at')
+                    ? gmdate('Y-m-d H:i:s', (int) Arr::get($payment, 'created_at'))
+                    : null);
+                if ($chargedAt && empty($transaction->meta['settled_at'])) {
+                    $transaction->meta = array_merge($transaction->meta ?? [], [
+                        'settled_at' => $chargedAt
+                    ]);
+                }
+
                 $transaction->update([
                     'vendor_charge_id' => $paymentId,
                     'status' => Status::TRANSACTION_SUCCEEDED
@@ -320,11 +339,11 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
                 'currency'         => strtoupper($currency),
                 'status'           => Status::TRANSACTION_SUCCEEDED,
                 'created_at'       => $paidAt ? gmdate('Y-m-d H:i:s', $paidAt) : gmdate('Y-m-d H:i:s'),
-                'meta'             => [
+                'meta'             => array_merge([
                     'razorpay_invoice_id' => Arr::get($invoice, 'id'),
                     'razorpay_payment_id' => $paymentId,
                     'synced_from_remote'  => true,
-                ],
+                ], $paidAt ? ['settled_at' => gmdate('Y-m-d H:i:s', (int) $paidAt)] : []),
             ];
 
             $hasNewInvoice = true;
