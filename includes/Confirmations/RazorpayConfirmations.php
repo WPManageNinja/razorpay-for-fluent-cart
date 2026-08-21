@@ -487,16 +487,28 @@ class RazorpayConfirmations
             }
         }
 
+        $metaData = array_merge($transaction->meta ?? [], [
+            'razorpay_status'     => $status,
+            'razorpay_method'     => $method,
+        ]);
+
+        // Razorpay's payment created_at is when the remote charge happened
+        // (Unix epoch). When this confirmation is the first path to mark the
+        // transaction succeeded, it beats the model hook's fallback now()
+        // stamp — which for a delayed webhook would be the (later) processing
+        // time, not the charge time.
+        $chargedAt = Arr::get($chargeData, 'created_at');
+        if ($chargedAt && $status === Status::TRANSACTION_SUCCEEDED && empty($metaData['settled_at'])) {
+            $metaData['settled_at'] = gmdate('Y-m-d H:i:s', (int) $chargedAt);
+        }
+
         $updateData = [
             'status'           => $status,
             'total'            => $amount,
             'currency'         => $currency,
             'payment_method'   => 'razorpay',
             'vendor_charge_id' => $paymentId,
-            'meta'             => array_merge($transaction->meta ?? [], [
-                'razorpay_status'     => $status,
-                'razorpay_method'     => $method,
-            ])
+            'meta'             => $metaData
         ];
 
         $method = Arr::get($chargeData, 'method', 'card');
@@ -543,7 +555,9 @@ class RazorpayConfirmations
         $updateData['card_last_4'] = Arr::get($billingInfo, 'details.last_4', '');
         $updateData['card_brand'] = Arr::get($billingInfo, 'details.brand', '');
         $updateData['payment_method_type'] = $method;
-        $updateData['meta'] = $billingInfo;
+        // Merge, don't replace — the meta built above carries razorpay_status,
+        // razorpay_method and settled_at, which a plain assignment would wipe.
+        $updateData['meta'] = array_merge($updateData['meta'], $billingInfo);
 
         // Update transaction
         $transaction->fill($updateData);
