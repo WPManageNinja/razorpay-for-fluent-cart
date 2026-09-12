@@ -97,7 +97,7 @@ class RazorpayConfirmations
         if ($transactionModel->status === Status::TRANSACTION_SUCCEEDED) {
             wp_send_json_success([
                 'message' => __('Payment successful', 'razorpay-for-fluent-cart'),
-                'redirect_url' => $transactionModel->getReceiptPageUrl()
+                'redirect_url' => method_exists($transactionModel, 'getSuccessUrl') ? $transactionModel->getSuccessUrl() : $transactionModel->getReceiptPageUrl()
             ]);
         }
 
@@ -146,7 +146,7 @@ class RazorpayConfirmations
             $this->confirmPaymentSuccessByCharge($transactionModel, $razorpayPayment);
             wp_send_json_success([
                 'message' => __('Payment successful', 'razorpay-for-fluent-cart'),
-                'redirect_url' => $transactionModel->getReceiptPageUrl()
+                'redirect_url' => method_exists($transactionModel, 'getSuccessUrl') ? $transactionModel->getSuccessUrl() : $transactionModel->getReceiptPageUrl()
             ]);
         }
 
@@ -203,7 +203,7 @@ class RazorpayConfirmations
         if ($transactionModel->status === Status::TRANSACTION_SUCCEEDED) {
             wp_send_json_success([
                 'message' => __('Payment successful', 'razorpay-for-fluent-cart'),
-                'redirect_url' => $transactionModel->getReceiptPageUrl()
+                'redirect_url' => method_exists($transactionModel, 'getSuccessUrl') ? $transactionModel->getSuccessUrl() : $transactionModel->getReceiptPageUrl()
             ]);
         }
 
@@ -407,7 +407,7 @@ class RazorpayConfirmations
 
         wp_send_json_success([
             'message'      => __('Subscription payment confirmed', 'razorpay-for-fluent-cart'),
-            'redirect_url' => $transactionModel->getReceiptPageUrl()
+            'redirect_url' => method_exists($transactionModel, 'getSuccessUrl') ? $transactionModel->getSuccessUrl() : $transactionModel->getReceiptPageUrl()
         ]);
     }
 
