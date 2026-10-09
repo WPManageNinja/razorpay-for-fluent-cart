@@ -2,9 +2,6 @@
 
 namespace RazorpayFluentCart\Refund;
 
-use FluentCart\App\Helpers\Status;
-use FluentCart\App\Models\OrderTransaction;
-use FluentCart\App\Services\Payments\PaymentHelper;
 use FluentCart\Framework\Support\Arr;
 use RazorpayFluentCart\API\RazorpayAPI;
 use FluentCart\App\Helpers\CurrenciesHelper;
@@ -102,70 +99,6 @@ class RazorpayRefund
         );
 
         return $refundId;
-    }
-
-    /**
-     * Create or update refund from webhook
-     */
-    public static function createOrUpdateIpnRefund($refundData, $parentTransaction)
-    {
-        $allRefunds = OrderTransaction::query()
-            ->where('vendor_charge_id', $refundData['vendor_charge_id'])
-            ->where('transaction_type', Status::TRANSACTION_TYPE_REFUND)
-            ->orderBy('id', 'DESC')
-            ->get();
-
-        if ($allRefunds->isEmpty()) {
-            // This is the first refund for this order
-            $createdRefund = OrderTransaction::query()->create($refundData);
-            
-            // Update parent transaction refunded total
-            if ($createdRefund) {
-                PaymentHelper::updateTransactionRefundedTotal($parentTransaction, $createdRefund->total);
-            }
-            
-            return $createdRefund instanceof OrderTransaction ? $createdRefund : null;
-        }
-
-        $existingLocalRefund = null;
-
-        foreach ($allRefunds as $refund) {
-            // Check if this exact refund already exists
-            if ($refund->vendor_charge_id == $refundData['vendor_charge_id']) {
-                if ($refund->total != $refundData['total'] || $refund->status != $refundData['status']) {
-                    $refund->fill($refundData);
-                    $refund->save();
-                }
-
-                return $refund;
-            }
-
-            // Check for local refund without vendor charge id
-            if (!$refund->vendor_charge_id) {
-                $refundedAmount = $refund->total;
-
-                // This is a local refund without vendor charge id, we will update it
-                if ($refundedAmount == $refundData['total']) {
-                    $existingLocalRefund = $refund;
-                }
-            }
-        }
-
-        if ($existingLocalRefund) {
-            $existingLocalRefund->fill($refundData);
-            $existingLocalRefund->save();
-            return $existingLocalRefund;
-        }
-
-        // Create new refund
-        $createdRefund = OrderTransaction::query()->create($refundData);
-        
-        // Update parent transaction refunded total
-        if ($createdRefund) {
-            PaymentHelper::updateTransactionRefundedTotal($parentTransaction, $createdRefund->total);
-        }
-
-        return $createdRefund;
     }
 }
 

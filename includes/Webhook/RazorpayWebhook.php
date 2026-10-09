@@ -7,7 +7,7 @@ use FluentCart\App\Helpers\StatusHelper;
 use FluentCart\App\Models\Order;
 use FluentCart\App\Models\OrderTransaction;
 use FluentCart\App\Models\Subscription;
-use FluentCart\App\Events\Order\OrderRefund;
+use FluentCart\App\Services\Payments\Refund;
 use FluentCart\App\Events\Order\OrderPaymentFailed;
 use FluentCart\App\Events\Subscription\SubscriptionActivated;
 use FluentCart\App\Modules\Subscriptions\Services\SubscriptionService;
@@ -16,7 +16,6 @@ use FluentCart\App\Services\DateTime\DateTime;
 use RazorpayFluentCart\API\RazorpayAPI;
 use RazorpayFluentCart\Settings\RazorpaySettingsBase;
 use RazorpayFluentCart\Confirmations\RazorpayConfirmations;
-use RazorpayFluentCart\Refund\RazorpayRefund;
 use RazorpayFluentCart\RazorpayHelper;
 use FluentCart\App\Helpers\CurrenciesHelper;
 
@@ -328,7 +327,6 @@ class RazorpayWebhook
     public function handleRefundProcessed($data)
     {
         $refund = Arr::get($data, 'payload.refund.entity');
-        $order = Arr::get($data, 'order');
         
         $refundId = Arr::get($refund, 'id');
         $paymentId = Arr::get($refund, 'payment_id');
@@ -354,21 +352,6 @@ class RazorpayWebhook
             $this->sendResponse(404, 'Parent transaction not found for payment: ' . $paymentId);
         }
 
-        // Check if this refund already exists
-        $existingRefund = OrderTransaction::query()
-            ->where('order_id', $parentTransaction->order_id)
-            ->where('transaction_type', Status::TRANSACTION_TYPE_REFUND)
-            ->where('vendor_charge_id', $refundId)
-            ->first();
-
-        if ($existingRefund) {
-            // Update if status changed
-            if ($existingRefund->status != Status::TRANSACTION_REFUNDED && $status == 'processed') {
-                $existingRefund->update(['status' => Status::TRANSACTION_REFUNDED]);
-            }
-            $this->sendResponse(200, 'Refund already exists');
-        }
-
         // Create refund transaction
         $refundData = [
             'order_id'           => $parentTransaction->order_id,
@@ -388,9 +371,9 @@ class RazorpayWebhook
             ]
         ];
 
-        $currentCreatedRefund = RazorpayRefund::createOrUpdateIpnRefund($refundData, $parentTransaction);
+        $recordedRefund = Refund::createOrRecordRefund($refundData, $parentTransaction);
 
-        if ($currentCreatedRefund && $currentCreatedRefund->wasRecentlyCreated) {
+        if ($recordedRefund instanceof OrderTransaction && $recordedRefund->wasRecentlyCreated) {
             fluent_cart_add_log(
                 __('Razorpay Refund Processed (Webhook)', 'razorpay-for-fluent-cart'),
                 sprintf('Refund ID: %s processed successfully', $refundId),
@@ -400,7 +383,6 @@ class RazorpayWebhook
                     'module_id'   => $parentTransaction->order_id,
                 ]
             );
-            (new OrderRefund($order, $currentCreatedRefund))->dispatch();
         }
 
         $this->sendResponse(200, 'Refund processed successfully');
