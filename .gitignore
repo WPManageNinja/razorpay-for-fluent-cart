@@ -17,3 +17,7 @@ vendor/
 .env
 .env.*
 
+
+# Tests
+tests/_output/
+tests/Support/_generated/

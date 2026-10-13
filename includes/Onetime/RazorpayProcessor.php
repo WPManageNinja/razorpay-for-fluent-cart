@@ -5,8 +5,8 @@ namespace RazorpayFluentCart\Onetime;
 use FluentCart\App\Services\Payments\PaymentInstance;
 use FluentCart\Framework\Support\Arr;
 use RazorpayFluentCart\API\RazorpayAPI;
+use RazorpayFluentCart\RazorpayHelper;
 use RazorpayFluentCart\Settings\RazorpaySettingsBase;
-use FluentCart\App\Helpers\CurrenciesHelper;
 
 class RazorpayProcessor
 {
@@ -38,7 +38,7 @@ class RazorpayProcessor
 
         // Create Razorpay order first
         $orderData = [
-            'amount'   => $transaction->total,
+            'amount'   => RazorpayHelper::toRazorpayAmount($transaction->total, $transaction->currency),
             'currency' => strtoupper($transaction->currency),
             'receipt'  => $transaction->uuid,
             'notes'    => [
@@ -48,10 +48,6 @@ class RazorpayProcessor
                 'customer_name'  => $fcCustomer->first_name . ' ' . $fcCustomer->last_name,
             ]
         ];
-
-        if (CurrenciesHelper::isZeroDecimal($transaction->currency)) {
-            $orderData['amount'] = (int) ($transaction->total / 100);
-        }
 
         $razorpayOrder = RazorpayAPI::createRazorpayObject('orders', $orderData);
 
@@ -71,7 +67,7 @@ class RazorpayProcessor
 
         // Prepare modal data
         $modalData = [
-            'amount'       => $transaction->total,
+            'amount'       => $orderData['amount'],
             'currency'     => strtoupper($transaction->currency),
             'description'  => $this->getProductName($order),
             'order_id'     => $razorpayOrder['id'],

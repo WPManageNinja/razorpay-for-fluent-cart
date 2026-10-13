@@ -9,6 +9,12 @@ use RazorpayFluentCart\API\RazorpayAPI;
 
 class RazorpayHelper
 {
+    const ZERO_DECIMAL_CURRENCIES = [
+        'BIF', 'CLP', 'DJF', 'GNF', 'ISK', 'JPY', 'KMF', 'KRW', 'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF'
+    ];
+
+    const THREE_DECIMAL_CURRENCIES = ['BHD', 'IQD', 'JOD', 'KWD', 'OMR', 'TND'];
+
     public static function getFctStatusFromRazorpayStatus($status)
     {
         $statusMap = [
@@ -63,6 +69,40 @@ class RazorpayHelper
             'TRY', 'TTD', 'TWD', 'TZS', 'UAH', 'UGX', 'USD', 'UYU', 'UZS', 'VND',
             'VUV', 'XAF', 'XCD', 'XOF', 'XPF', 'YER', 'ZAR', 'ZMW'
         ], []);
+    }
+
+    /**
+     * FluentCart stores every currency ×100; Razorpay takes the currency's own minor unit.
+     * https://razorpay.com/docs/payments/international-payments/#supported-currencies
+     */
+    public static function toRazorpayAmount($cents, $currency): int
+    {
+        $currency = strtoupper((string) $currency);
+
+        if (in_array($currency, self::ZERO_DECIMAL_CURRENCIES, true)) {
+            return (int) round($cents / 100);
+        }
+
+        if (in_array($currency, self::THREE_DECIMAL_CURRENCIES, true)) {
+            return (int) round($cents * 10);
+        }
+
+        return (int) round($cents);
+    }
+
+    public static function fromRazorpayAmount($amount, $currency): int
+    {
+        $currency = strtoupper((string) $currency);
+
+        if (in_array($currency, self::ZERO_DECIMAL_CURRENCIES, true)) {
+            return (int) round($amount * 100);
+        }
+
+        if (in_array($currency, self::THREE_DECIMAL_CURRENCIES, true)) {
+            return (int) round($amount / 10);
+        }
+
+        return (int) round($amount);
     }
 
     public static function getIntervalInSeconds($billingInterval)

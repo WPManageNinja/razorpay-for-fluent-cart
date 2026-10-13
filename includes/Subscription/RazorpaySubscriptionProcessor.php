@@ -8,7 +8,6 @@ use FluentCart\Framework\Support\Arr;
 use RazorpayFluentCart\API\RazorpayAPI;
 use RazorpayFluentCart\RazorpayHelper;
 use RazorpayFluentCart\Settings\RazorpaySettingsBase;
-use FluentCart\App\Helpers\CurrenciesHelper;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -64,18 +63,12 @@ class RazorpaySubscriptionProcessor
         $fcCustomer = $order->customer;
 
         $currency = strtoupper($transaction->currency);
-        $isZeroDecimal = CurrenciesHelper::isZeroDecimal($currency);
 
-        $firstPayment = (int) $transaction->total;
-        $recurringTotal = (int) $subscription->recurring_total;
+        $firstPayment = RazorpayHelper::toRazorpayAmount($transaction->total, $currency);
+        $recurringTotal = RazorpayHelper::toRazorpayAmount($subscription->recurring_total, $currency);
         $trialDays = (int) $subscription->trial_days;
         $billingInterval = $subscription->billing_interval;
         $billTimes = (int) $subscription->bill_times;
-
-        if ($isZeroDecimal) {
-            $firstPayment = (int) ($firstPayment / 100);
-            $recurringTotal = (int) ($recurringTotal / 100);
-        }
 
         $razorpayCustomer = RazorpayHelper::createOrGetRazorpayCustomer($fcCustomer);
         if (is_wp_error($razorpayCustomer)) {
@@ -223,15 +216,10 @@ class RazorpaySubscriptionProcessor
         $fcCustomer = $order->customer;
 
         $currency = strtoupper($transaction->currency);
-        $isZeroDecimal = CurrenciesHelper::isZeroDecimal($currency);
 
-        $renewalAmount = (int) $subscription->recurring_total;
+        $renewalAmount = RazorpayHelper::toRazorpayAmount($subscription->recurring_total, $currency);
         $billingInterval = $subscription->billing_interval;
         $billTimes = (int) $subscription->getRequiredBillTimes();
-
-        if ($isZeroDecimal) {
-            $renewalAmount = (int) ($renewalAmount / 100);
-        }
 
         $reactivationTrialDays = 0;
         if (method_exists($subscription, 'getReactivationTrialDays')) {

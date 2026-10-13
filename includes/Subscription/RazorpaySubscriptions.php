@@ -327,15 +327,15 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
                 continue;
             }
 
-            $amount = Arr::get($invoice, 'amount_paid', Arr::get($payment, 'amount', 0));
             $currency = Arr::get($invoice, 'currency', Arr::get($payment, 'currency', 'INR'));
+            $amount = RazorpayHelper::fromRazorpayAmount(Arr::get($invoice, 'amount_paid', Arr::get($payment, 'amount', 0)), $currency);
             $paidAt = Arr::get($invoice, 'paid_at', Arr::get($payment, 'created_at'));
 
             $transactionData = [
                 'subscription_id'  => $subscriptionModel->id,
                 'payment_method'   => 'razorpay',
                 'vendor_charge_id' => $paymentId,
-                'total'            => (int) $amount,
+                'total'            => $amount,
                 'currency'         => strtoupper($currency),
                 'status'           => Status::TRANSACTION_SUCCEEDED,
                 'created_at'       => $paidAt ? gmdate('Y-m-d H:i:s', $paidAt) : gmdate('Y-m-d H:i:s'),
