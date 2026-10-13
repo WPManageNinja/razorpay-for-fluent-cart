@@ -18,7 +18,6 @@ use RazorpayFluentCart\Settings\RazorpaySettingsBase;
 use RazorpayFluentCart\Confirmations\RazorpayConfirmations;
 use RazorpayFluentCart\Refund\RazorpayRefund;
 use RazorpayFluentCart\RazorpayHelper;
-use FluentCart\App\Helpers\CurrenciesHelper;
 
 class RazorpayWebhook
 {
@@ -332,13 +331,9 @@ class RazorpayWebhook
         
         $refundId = Arr::get($refund, 'id');
         $paymentId = Arr::get($refund, 'payment_id');
-        $amount = Arr::get($refund, 'amount');
         $currency = Arr::get($refund, 'currency', 'INR');
+        $amount = RazorpayHelper::fromRazorpayAmount(Arr::get($refund, 'amount'), $currency);
         $status = Arr::get($refund, 'status');
-
-        if (CurrenciesHelper::isZeroDecimal($currency)) {
-            $amount = $amount * 100;
-        }
 
         if (!$refundId || !$paymentId) {
             $this->sendResponse(400, 'Refund or Payment ID not found');

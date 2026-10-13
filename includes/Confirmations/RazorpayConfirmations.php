@@ -13,7 +13,6 @@ use FluentCart\App\Events\Subscription\SubscriptionActivated;
 use FluentCart\Framework\Support\Arr;
 use RazorpayFluentCart\API\RazorpayAPI;
 use RazorpayFluentCart\RazorpayHelper;
-use FluentCart\App\Helpers\CurrenciesHelper;
 
 
 class RazorpayConfirmations
@@ -443,8 +442,8 @@ class RazorpayConfirmations
         }
 
         $paymentId = Arr::get($chargeData, 'id');
-        $amount = Arr::get($chargeData, 'amount', 0);
         $currency = Arr::get($chargeData, 'currency');
+        $amount = RazorpayHelper::fromRazorpayAmount(Arr::get($chargeData, 'amount', 0), $currency);
         $status = Arr::get($chargeData, 'status');
         $method = Arr::get($chargeData, 'method', '');
 
@@ -456,7 +455,7 @@ class RazorpayConfirmations
         }
 
         if ($transaction->total <= 0 && $amount > 0) {
-            $displayAuthAmount = CurrenciesHelper::isZeroDecimal($currency) ? $amount : ($amount / 100);
+            $displayAuthAmount = $amount / 100;
             $authChargeMessage = sprintf(
                 '%s %s was charged by Razorpay to authorize the mandate (payment %s). Razorpay refunds this amount automatically.',
                 $displayAuthAmount,
@@ -564,7 +563,7 @@ class RazorpayConfirmations
         $transaction->save();
 
         // Calculate display amount for logging
-        $displayAmount = CurrenciesHelper::isZeroDecimal($currency) ? $amount : ($amount / 100);
+        $displayAmount = $amount / 100;
 
         fluent_cart_add_log(
             __('Razorpay Payment Confirmation', 'razorpay-for-fluent-cart'),

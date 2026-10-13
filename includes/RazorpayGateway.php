@@ -24,7 +24,8 @@ class RazorpayGateway extends AbstractPaymentGateway
         'refund',
         'webhook',
         'subscription',
-        'manual_subscription'
+        'manual_subscription',
+        'multi_currency',
     ];
 
     public function __construct()

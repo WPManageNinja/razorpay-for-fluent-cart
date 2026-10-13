@@ -7,7 +7,7 @@ use FluentCart\App\Models\OrderTransaction;
 use FluentCart\App\Services\Payments\PaymentHelper;
 use FluentCart\Framework\Support\Arr;
 use RazorpayFluentCart\API\RazorpayAPI;
-use FluentCart\App\Helpers\CurrenciesHelper;
+use RazorpayFluentCart\RazorpayHelper;
 
 class RazorpayRefund
 {
@@ -27,12 +27,8 @@ class RazorpayRefund
 
         // Prepare refund data
         $refundData = [
-            'amount' => (int)$amount
+            'amount' => RazorpayHelper::toRazorpayAmount($amount, $transaction->currency)
         ];
-
-        if (CurrenciesHelper::isZeroDecimal($transaction->currency)) {
-            $refundData['amount'] = (int)$amount / 100;
-        }
 
         $refundSpeed = apply_filters('razorpay_fc/refund_speed', 'normal', [
             'transaction' => $transaction,
