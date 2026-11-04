@@ -39,6 +39,7 @@ class RazorpayGateway extends AbstractPaymentGateway
     public function meta(): array
     {
         $logo = RAZORPAY_FC_PLUGIN_URL . 'assets/images/razorpay-logo.svg';
+        $logoLight = RAZORPAY_FC_PLUGIN_URL . 'assets/images/razorpay-logo-light.svg';
 
         $addonStatus = PaymentAddonManager::getAddonStatus($this->addonSlug, $this->addonFile);
         
@@ -50,6 +51,7 @@ class RazorpayGateway extends AbstractPaymentGateway
             'admin_title'        => 'Razorpay',
             'description'        => __('Pay securely with Razorpay - Cards, UPI, Netbanking, Wallets, and more', 'razorpay-for-fluent-cart'),
             'logo'               => $logo,
+            'logo_light'         => $logoLight,
             'icon'               => $logo,
             'brand_color'        => '#3399cc',
             'status'             => $this->settings->get('is_active') === 'yes',
