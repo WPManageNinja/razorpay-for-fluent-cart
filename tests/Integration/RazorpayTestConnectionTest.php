@@ -32,7 +32,7 @@ class RazorpayTestConnectionTest extends WPTestCase
 
             return [
                 'headers'  => [],
-                'body'     => wp_json_encode($body),
+                'body'     => is_string($body) ? $body : wp_json_encode($body),
                 'response' => ['code' => $status, 'message' => ''],
                 'cookies'  => [],
                 'filename' => null,
@@ -140,6 +140,46 @@ class RazorpayTestConnectionTest extends WPTestCase
 
         $this->assertWPError($result);
         $this->assertSame('Razorpay answered HTTP 500.', $result->get_error_message());
+    }
+
+    public function test_empty_collection_is_accepted(): void
+    {
+        $this->reply = [200, ['entity' => 'collection', 'count' => 0, 'items' => []]];
+
+        $result = $this->gateway([
+            'test_api_key'    => 'rzp_test_suite',
+            'test_key_secret' => 'secret',
+        ])->testConnection('test');
+
+        $this->assertSame(['message' => 'Razorpay accepted the test API keys.'], $result);
+    }
+
+    /**
+     * @dataProvider unreadableReplies
+     */
+    public function test_200_without_a_payment_collection_is_an_error($body): void
+    {
+        $this->reply = [200, $body];
+
+        $result = $this->gateway([
+            'test_api_key'    => 'rzp_test_suite',
+            'test_key_secret' => 'secret',
+        ])->testConnection('test');
+
+        $this->assertWPError($result);
+        $this->assertSame('razorpay_api_error', $result->get_error_code());
+        $this->assertSame('Razorpay sent a reply the test could not read.', $result->get_error_message());
+    }
+
+    public static function unreadableReplies(): array
+    {
+        return [
+            'empty object'        => ['{}'],
+            'unrelated json'      => [['status' => 'ok']],
+            'other entity'        => [['entity' => 'payment', 'items' => []]],
+            'items not an array'  => [['entity' => 'collection', 'items' => 'none']],
+            'items missing'       => [['entity' => 'collection', 'count' => 0]],
+        ];
     }
 
     /**

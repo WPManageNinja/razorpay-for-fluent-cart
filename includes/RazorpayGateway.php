@@ -387,6 +387,10 @@ class RazorpayGateway extends AbstractPaymentGateway
             ));
         }
 
+        if (Arr::get($body, 'entity') !== 'collection' || !is_array(Arr::get($body, 'items'))) {
+            return new \WP_Error('razorpay_api_error', __('Razorpay sent a reply the test could not read.', 'razorpay-for-fluent-cart'));
+        }
+
         return [
             'message' => $mode === 'live'
                 ? __('Razorpay accepted the live API keys.', 'razorpay-for-fluent-cart')
