@@ -344,6 +344,60 @@ class RazorpayGateway extends AbstractPaymentGateway
         ];
     }
 
+    public function testConnection(string $mode)
+    {
+        $apiKey = trim((string) $this->settings->getApiKey($mode));
+        $keySecret = trim((string) $this->settings->getKeySecret($mode));
+
+        if (!$apiKey || !$keySecret) {
+            return new \WP_Error('missing_credentials', $mode === 'live'
+                ? __('No live API keys are saved.', 'razorpay-for-fluent-cart')
+                : __('No test API keys are saved.', 'razorpay-for-fluent-cart'));
+        }
+
+        // Razorpay accepts a test key on the same host, so the key id prefix is the only mode signal.
+        if (strpos($apiKey, 'rzp_' . $mode . '_') !== 0) {
+            return new \WP_Error('mode_mismatch', $mode === 'live'
+                ? __('The live API key does not start with rzp_live_.', 'razorpay-for-fluent-cart')
+                : __('The test API key does not start with rzp_test_.', 'razorpay-for-fluent-cart'));
+        }
+
+        // https://razorpay.com/docs/api/payments/fetch-all-payments/
+        $response = wp_remote_get('https://api.razorpay.com/v1/payments?count=1', [
+            'headers' => [
+                'Authorization' => 'Basic ' . base64_encode($apiKey . ':' . $keySecret),
+            ],
+            'timeout' => 15,
+        ]);
+
+        if (is_wp_error($response)) {
+            return $response;
+        }
+
+        $statusCode = (int) wp_remote_retrieve_response_code($response);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if ($statusCode !== 200 || !is_array($body) || Arr::get($body, 'error')) {
+            $message = is_array($body) ? Arr::get($body, 'error.description') : '';
+
+            return new \WP_Error('razorpay_api_error', $message ?: sprintf(
+                /* translators: %d: HTTP status code */
+                __('Razorpay answered HTTP %d.', 'razorpay-for-fluent-cart'),
+                $statusCode
+            ));
+        }
+
+        if (Arr::get($body, 'entity') !== 'collection' || !is_array(Arr::get($body, 'items'))) {
+            return new \WP_Error('razorpay_api_error', __('Razorpay sent a reply the test could not read.', 'razorpay-for-fluent-cart'));
+        }
+
+        return [
+            'message' => $mode === 'live'
+                ? __('Razorpay accepted the live API keys.', 'razorpay-for-fluent-cart')
+                : __('Razorpay accepted the test API keys.', 'razorpay-for-fluent-cart')
+        ];
+    }
+
     public static function validateSettings($data): array
     {
         $mode = Arr::get($data, 'payment_mode', 'test');
