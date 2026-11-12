@@ -7,6 +7,7 @@ use FluentCart\App\Models\OrderItem;
 use FluentCart\App\Models\OrderTransaction;
 use FluentCart\App\Models\Subscription;
 use lucatume\WPBrowser\TestCase\WPTestCase;
+use RazorpayFluentCart\Confirmations\RazorpayConfirmations;
 use RazorpayFluentCart\Subscription\RazorpaySubscriptions;
 use Tests\Support\Factory\CustomerFactory;
 use Tests\Support\Factory\OrderFactory;
@@ -45,10 +46,12 @@ class RazorpayFirstInvoiceResyncTest extends WPTestCase
     {
         list($order, $transaction, $subscription) = $this->unconfirmedSubscription(99900);
         $this->stubRazorpay($this->paidFirstInvoice(99900));
+        $activations = did_action('fluent_cart/subscription_activated');
 
         (new RazorpaySubscriptions())->reSyncSubscriptionFromRemote($subscription);
         (new RazorpaySubscriptions())->reSyncSubscriptionFromRemote(Subscription::query()->find($subscription->id));
 
+        $this->assertSame($activations + 1, did_action('fluent_cart/subscription_activated'));
         $transaction = OrderTransaction::query()->find($transaction->id);
         $this->assertSame('succeeded', $transaction->status);
         $this->assertSame($this->payId, $transaction->vendor_charge_id);
@@ -96,6 +99,19 @@ class RazorpayFirstInvoiceResyncTest extends WPTestCase
 
         $this->assertSame('succeeded', OrderTransaction::query()->find($transaction->id)->status);
         $this->assertSame(0, Order::query()->where('parent_id', $order->id)->count());
+    }
+
+    public function test_confirmation_after_the_activated_webhook_does_not_fire_activation_again(): void
+    {
+        list($order, $transaction, $subscription) = $this->unconfirmedSubscription(99900);
+        $subscription->update(['status' => 'active']);
+        $payment = $this->paidFirstInvoice(99900)['payments/' . $this->payId];
+        $activations = did_action('fluent_cart/subscription_activated');
+
+        (new RazorpayConfirmations())->confirmPaymentSuccessByCharge($transaction, $payment, ['status' => 'active']);
+
+        $this->assertSame('succeeded', OrderTransaction::query()->find($transaction->id)->status);
+        $this->assertSame($activations, did_action('fluent_cart/subscription_activated'));
     }
 
     private function unconfirmedSubscription(int $total, array $meta = []): array

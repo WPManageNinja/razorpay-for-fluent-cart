@@ -630,6 +630,7 @@ class RazorpayConfirmations
 
         } else {
             if ($subscription) {
+                $oldStatus = $subscription->status;
                 $subscription->fill($subscriptionUpdateData);
                 $subscription->save();
 
@@ -646,7 +647,9 @@ class RazorpayConfirmations
 
                 $subscription->updateMeta('active_payment_method', $billingInfo);
 
-                if (in_array($subscription->status, [Status::SUBSCRIPTION_ACTIVE, Status::SUBSCRIPTION_TRIALING])) {
+                // The subscription.authenticated / .activated webhook may have fired it already.
+                $wasActivated = in_array($oldStatus, [Status::SUBSCRIPTION_ACTIVE, Status::SUBSCRIPTION_TRIALING, Status::SUBSCRIPTION_AUTHENTICATED], true);
+                if (!$wasActivated && in_array($subscription->status, [Status::SUBSCRIPTION_ACTIVE, Status::SUBSCRIPTION_TRIALING])) {
                     (new SubscriptionActivated($subscription, $order, $order->customer))->dispatch();
                 }
             }
