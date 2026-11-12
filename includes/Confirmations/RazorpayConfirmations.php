@@ -424,6 +424,22 @@ class RazorpayConfirmations
             return null;
         }
 
+        // Browser confirmation, payment webhooks and invoice resync can confirm the same row at once.
+        global $wpdb;
+        $lockName = 'fc_razorpay_txn_' . $transaction->id;
+        if (!$wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, 5)', $lockName))) {
+            return null;
+        }
+
+        try {
+            return $this->applyChargeConfirmation($transaction, $chargeData, $subscriptionUpdateData);
+        } finally {
+            $wpdb->query($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $lockName));
+        }
+    }
+
+    private function applyChargeConfirmation(OrderTransaction $transaction, $chargeData, $subscriptionUpdateData)
+    {
          // in race conditions between webhook and AJAX confirmation
         $transaction = OrderTransaction::query()->where('id', $transaction->id)->first();
         if ($transaction->status === Status::TRANSACTION_SUCCEEDED) {
