@@ -4,7 +4,7 @@ Tags: razorpay, payment gateway, fluentcart, india, inr
 Requires at least: 5.6
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.2.3
+Stable tag: 1.3.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -85,6 +85,9 @@ The plugin automatically handles webhook configuration. The webhook URL is displ
 4. Transaction management
 
 == Changelog ==
+
+= 1.3.0 =
+* Adds multi currency support alongside FluentCart core
 
 = 1.2.3 =
 * Adds support for store managed subscriptions
