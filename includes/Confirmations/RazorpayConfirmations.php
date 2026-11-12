@@ -142,7 +142,9 @@ class RazorpayConfirmations
             'razorpay_payment' => $razorpayPayment,
         ]);
         if ($razorpayPaymentStatus === 'paid' || $razorpayPaymentStatus === 'captured' || ($razorpayPaymentStatus === 'authorized' && $isAuthorizationIsASuccessState)) {
-            $this->confirmPaymentSuccessByCharge($transactionModel, $razorpayPayment);
+            if (is_wp_error($this->confirmPaymentSuccessByCharge($transactionModel, $razorpayPayment))) {
+                $this->confirmationPending($transactionModel);
+            }
             wp_send_json_success([
                 'message' => __('Payment successful', 'razorpay-for-fluent-cart'),
                 'redirect_url' => $transactionModel->getReceiptPageUrl()
@@ -386,8 +388,10 @@ class RazorpayConfirmations
 
         $subscriptionUpdateData['vendor_response'] = $razorpaySubscription;
 
-        $this->confirmPaymentSuccessByCharge($transactionModel, $razorpayPayment, $subscriptionUpdateData);
-        
+        if (is_wp_error($this->confirmPaymentSuccessByCharge($transactionModel, $razorpayPayment, $subscriptionUpdateData))) {
+            $this->confirmationPending($transactionModel);
+        }
+
         fluent_cart_add_log(
             'Razorpay Subscription Confirmed',
             sprintf(
@@ -424,6 +428,22 @@ class RazorpayConfirmations
             return null;
         }
 
+        // Browser confirmation, payment webhooks and invoice resync can confirm the same row at once.
+        global $wpdb;
+        $lockName = 'fc_razorpay_txn_' . $transaction->id;
+        if (!$wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, 5)', $lockName))) {
+            return new \WP_Error('razorpay_confirmation_locked', __('Another request is confirming this payment.', 'razorpay-for-fluent-cart'));
+        }
+
+        try {
+            return $this->applyChargeConfirmation($transaction, $chargeData, $subscriptionUpdateData);
+        } finally {
+            $wpdb->query($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $lockName));
+        }
+    }
+
+    private function applyChargeConfirmation(OrderTransaction $transaction, $chargeData, $subscriptionUpdateData)
+    {
          // in race conditions between webhook and AJAX confirmation
         $transaction = OrderTransaction::query()->where('id', $transaction->id)->first();
         if ($transaction->status === Status::TRANSACTION_SUCCEEDED) {
@@ -610,6 +630,7 @@ class RazorpayConfirmations
 
         } else {
             if ($subscription) {
+                $oldStatus = $subscription->status;
                 $subscription->fill($subscriptionUpdateData);
                 $subscription->save();
 
@@ -626,7 +647,9 @@ class RazorpayConfirmations
 
                 $subscription->updateMeta('active_payment_method', $billingInfo);
 
-                if (in_array($subscription->status, [Status::SUBSCRIPTION_ACTIVE, Status::SUBSCRIPTION_TRIALING])) {
+                // The subscription.authenticated / .activated webhook may have fired it already.
+                $wasActivated = in_array($oldStatus, [Status::SUBSCRIPTION_ACTIVE, Status::SUBSCRIPTION_TRIALING, Status::SUBSCRIPTION_AUTHENTICATED], true);
+                if (!$wasActivated && in_array($subscription->status, [Status::SUBSCRIPTION_ACTIVE, Status::SUBSCRIPTION_TRIALING])) {
                     (new SubscriptionActivated($subscription, $order, $order->customer))->dispatch();
                 }
             }
@@ -637,6 +660,22 @@ class RazorpayConfirmations
 
         
         return $order;
+    }
+
+    private function confirmationPending(OrderTransaction $transaction)
+    {
+        $transaction = OrderTransaction::query()->where('id', $transaction->id)->first();
+        if ($transaction && in_array($transaction->status, [Status::TRANSACTION_SUCCEEDED, Status::TRANSACTION_AUTHORIZED], true)) {
+            wp_send_json_success([
+                'message'      => __('Payment successful', 'razorpay-for-fluent-cart'),
+                'redirect_url' => $transaction->getReceiptPageUrl()
+            ]);
+        }
+
+        wp_send_json_error([
+            'pending' => true,
+            'message' => __('Your payment is still being confirmed. Do not pay again. Check your order in a few minutes.', 'razorpay-for-fluent-cart')
+        ]);
     }
 
     public function confirmationFailed($code = 400)

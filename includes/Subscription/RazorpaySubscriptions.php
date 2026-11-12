@@ -11,6 +11,7 @@ use FluentCart\App\Modules\Subscriptions\Services\SubscriptionService;
 use FluentCart\Framework\Support\Arr;
 use FluentCart\App\Services\DateTime\DateTime;
 use RazorpayFluentCart\API\RazorpayAPI;
+use RazorpayFluentCart\Confirmations\RazorpayConfirmations;
 use FluentCart\App\Helpers\StatusHelper;
 use RazorpayFluentCart\RazorpayHelper;
 
@@ -229,7 +230,7 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
                     'module_id'   => $subscriptionModel->id,
                 ]
             );
-            $invoices = ['items' => []];
+            return $invoices;
         }
 
         $invoiceItems = Arr::get($invoices, 'items', []);
@@ -300,6 +301,26 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
 
             $payment = RazorpayAPI::getRazorpayObject('payments/' . $paymentId);
             if (is_wp_error($payment)) {
+                return $payment;
+            }
+
+            // invoice.paid can beat the browser confirmation; the first row still carries the sub_ id.
+            // Addon subs pay upfront without an invoice, so their first invoice is a renewal.
+            $firstTransaction = OrderTransaction::query()
+                ->where('subscription_id', $subscriptionModel->id)
+                ->where('transaction_type', Status::TRANSACTION_TYPE_CHARGE)
+                ->where('payment_method', 'razorpay')
+                ->where('vendor_charge_id', $vendorSubscriptionId)
+                ->where('status', '!=', Status::TRANSACTION_SUCCEEDED)
+                ->where('total', '>', 0)
+                ->first();
+
+            if ($firstTransaction && !Arr::get($firstTransaction->meta, 'use_addon')) {
+                $confirmed = (new RazorpayConfirmations())->confirmPaymentSuccessByCharge($firstTransaction, $payment, $subscriptionUpdateData);
+                if (is_wp_error($confirmed)) {
+                    return $confirmed;
+                }
+                $subscriptionModel = Subscription::query()->find($subscriptionModel->id);
                 continue;
             }
 
