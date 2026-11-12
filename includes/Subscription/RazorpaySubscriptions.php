@@ -230,7 +230,7 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
                     'module_id'   => $subscriptionModel->id,
                 ]
             );
-            $invoices = ['items' => []];
+            return $invoices;
         }
 
         $invoiceItems = Arr::get($invoices, 'items', []);
@@ -301,7 +301,7 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
 
             $payment = RazorpayAPI::getRazorpayObject('payments/' . $paymentId);
             if (is_wp_error($payment)) {
-                continue;
+                return $payment;
             }
 
             // invoice.paid can beat the browser confirmation; the first row still carries the sub_ id.
@@ -316,7 +316,10 @@ class RazorpaySubscriptions extends AbstractSubscriptionModule
                 ->first();
 
             if ($firstTransaction && !Arr::get($firstTransaction->meta, 'use_addon')) {
-                (new RazorpayConfirmations())->confirmPaymentSuccessByCharge($firstTransaction, $payment, $subscriptionUpdateData);
+                $confirmed = (new RazorpayConfirmations())->confirmPaymentSuccessByCharge($firstTransaction, $payment, $subscriptionUpdateData);
+                if (is_wp_error($confirmed)) {
+                    return $confirmed;
+                }
                 $subscriptionModel = Subscription::query()->find($subscriptionModel->id);
                 continue;
             }

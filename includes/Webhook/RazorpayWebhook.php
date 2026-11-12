@@ -172,7 +172,10 @@ class RazorpayWebhook
         );
 
         // Confirm the payment
-        (new RazorpayConfirmations())->confirmPaymentSuccessByCharge($transaction, $razorpayPayment);
+        $confirmed = (new RazorpayConfirmations())->confirmPaymentSuccessByCharge($transaction, $razorpayPayment);
+        if (is_wp_error($confirmed)) {
+            $this->sendResponse(503, $confirmed->get_error_message());
+        }
 
         $this->sendResponse(200, 'Payment captured successfully');
     }
@@ -243,8 +246,11 @@ class RazorpayWebhook
                         'module_id'   => $transaction->order_id,
                     ]
                 );
-                  // Process the captured payment
-                  (new RazorpayConfirmations())->confirmPaymentSuccessByCharge($transaction, $razorpayPayment);
+                // Process the captured payment
+                $confirmed = (new RazorpayConfirmations())->confirmPaymentSuccessByCharge($transaction, $razorpayPayment);
+                if (is_wp_error($confirmed)) {
+                    $this->sendResponse(503, $confirmed->get_error_message());
+                }
 
             }
         } else {
@@ -254,7 +260,10 @@ class RazorpayWebhook
 
             if ($isAuthorizationIsASuccessState) {
                 // Process the captured payment
-                (new RazorpayConfirmations())->confirmPaymentSuccessByCharge($transaction, $razorpayPayment);
+                $confirmed = (new RazorpayConfirmations())->confirmPaymentSuccessByCharge($transaction, $razorpayPayment);
+                if (is_wp_error($confirmed)) {
+                    $this->sendResponse(503, $confirmed->get_error_message());
+                }
             } else {
                 $transaction->update([
                     'status' => Status::TRANSACTION_AUTHORIZED,
@@ -642,8 +651,11 @@ class RazorpayWebhook
             $this->sendResponse(200, 'Subscription not found in FluentCart');
         }
 
-        $subscription->reSyncFromRemote();
-        
+        $synced = $subscription->reSyncFromRemote();
+        if (is_wp_error($synced)) {
+            $this->sendResponse(503, $synced->get_error_message());
+        }
+
         fluent_cart_add_log(
             'Razorpay Webhook - Invoice Paid',
             sprintf('Renewal payment recorded for subscription %d. Payment: %s, Invoice: %s',
@@ -674,7 +686,10 @@ class RazorpayWebhook
             $this->sendResponse(200, 'Subscription not found in FluentCart');
         }
 
-        $subscription->reSyncFromRemote();
+        $synced = $subscription->reSyncFromRemote();
+        if (is_wp_error($synced)) {
+            $this->sendResponse(503, $synced->get_error_message());
+        }
 
         fluent_cart_add_log(
             'Razorpay Webhook - Subscription Cancelled',
@@ -705,7 +720,10 @@ class RazorpayWebhook
             $this->sendResponse(200, 'Subscription not found in FluentCart');
         }
 
-        $subscription->reSyncFromRemote();
+        $synced = $subscription->reSyncFromRemote();
+        if (is_wp_error($synced)) {
+            $this->sendResponse(503, $synced->get_error_message());
+        }
 
         fluent_cart_add_log(
             'Razorpay Webhook - Subscription Paused',
@@ -736,7 +754,10 @@ class RazorpayWebhook
             $this->sendResponse(200, 'Subscription not found in FluentCart');
         }
 
-        $subscription->reSyncFromRemote();
+        $synced = $subscription->reSyncFromRemote();
+        if (is_wp_error($synced)) {
+            $this->sendResponse(503, $synced->get_error_message());
+        }
 
         fluent_cart_add_log(
             'Razorpay Webhook - Subscription Resumed',
@@ -768,7 +789,10 @@ class RazorpayWebhook
             $this->sendResponse(200, 'Subscription not found in FluentCart');
         }
 
-        $subscription->reSyncFromRemote();
+        $synced = $subscription->reSyncFromRemote();
+        if (is_wp_error($synced)) {
+            $this->sendResponse(503, $synced->get_error_message());
+        }
 
         fluent_cart_add_log(
             'Razorpay Webhook - Subscription Halted',
@@ -800,7 +824,10 @@ class RazorpayWebhook
             $this->sendResponse(200, 'Subscription not found in FluentCart');
         }
 
-        $subscription->reSyncFromRemote();
+        $synced = $subscription->reSyncFromRemote();
+        if (is_wp_error($synced)) {
+            $this->sendResponse(503, $synced->get_error_message());
+        }
 
         fluent_cart_add_log(
             'Razorpay Webhook - Subscription Completed',
@@ -831,7 +858,10 @@ class RazorpayWebhook
             $this->sendResponse(200, 'Subscription not found in FluentCart');
         }
 
-        $subscription->reSyncFromRemote();
+        $synced = $subscription->reSyncFromRemote();
+        if (is_wp_error($synced)) {
+            $this->sendResponse(503, $synced->get_error_message());
+        }
 
         fluent_cart_add_log(
             'Razorpay Webhook - Subscription Pending',

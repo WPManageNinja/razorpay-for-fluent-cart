@@ -70,6 +70,34 @@ class RazorpayFirstInvoiceResyncTest extends WPTestCase
         $this->assertSame(1, Order::query()->where('parent_id', $order->id)->count());
     }
 
+    public function test_first_invoice_resync_returns_an_error_while_another_request_holds_the_lock(): void
+    {
+        list($order, $transaction, $subscription) = $this->unconfirmedSubscription(99900);
+        $this->stubRazorpay($this->paidFirstInvoice(99900));
+
+        // GET_LOCK is per connection, so the holder needs its own.
+        $holder = new \wpdb(DB_USER, DB_PASSWORD, DB_NAME, DB_HOST);
+        $lockName = 'fc_razorpay_txn_' . $transaction->id;
+        $this->assertSame('1', $holder->get_var($holder->prepare('SELECT GET_LOCK(%s, 0)', $lockName)));
+
+        try {
+            $result = (new RazorpaySubscriptions())->reSyncSubscriptionFromRemote($subscription);
+        } finally {
+            $holder->query($holder->prepare('SELECT RELEASE_LOCK(%s)', $lockName));
+            $holder->close();
+        }
+
+        $this->assertWPError($result);
+        $this->assertSame('razorpay_confirmation_locked', $result->get_error_code());
+        $this->assertSame('pending', OrderTransaction::query()->find($transaction->id)->status);
+        $this->assertSame(0, Order::query()->where('parent_id', $order->id)->count());
+
+        (new RazorpaySubscriptions())->reSyncSubscriptionFromRemote(Subscription::query()->find($subscription->id));
+
+        $this->assertSame('succeeded', OrderTransaction::query()->find($transaction->id)->status);
+        $this->assertSame(0, Order::query()->where('parent_id', $order->id)->count());
+    }
+
     private function unconfirmedSubscription(int $total, array $meta = []): array
     {
         $customer = (new CustomerFactory())->create();

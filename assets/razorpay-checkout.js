@@ -332,7 +332,12 @@ class RazorpayCheckout {
             if (xhr.status >= 200 && xhr.status < 300) {
                 try {
                     const res = JSON.parse(xhr.responseText);
-                    
+
+                    if (res?.data?.pending) {
+                        that.showPendingMessage(res.data.message);
+                        return;
+                    }
+
                     if (res?.data?.redirect_url || res?.redirect_url) {
                         const redirectUrl = res?.data?.redirect_url || res?.redirect_url;
                         that.paymentLoader.triggerPaymentCompleteEvent(res);
@@ -362,6 +367,21 @@ class RazorpayCheckout {
         };
 
         xhr.send(params.toString());
+    }
+
+    // Paid at Razorpay, confirmation still running: keep Place Order disabled.
+    showPendingMessage(message) {
+        const razorpayContainer = document.querySelector('.fluent-cart-checkout_embed_payment_container_razorpay');
+        if (razorpayContainer) {
+            const notice = document.createElement('div');
+            notice.textContent = message;
+            notice.style.fontSize = '14px';
+            notice.style.padding = '10px';
+            razorpayContainer.appendChild(notice);
+            razorpayContainer.style.display = 'block';
+        }
+
+        this.paymentLoader.hideLoader();
     }
 
     handlePaymentCancel() {
